@@ -6,7 +6,7 @@
   const STORE = 'forge.v1';
   const DEFAULTS = () => ({
     v: 1,
-    settings: { unit: 'kg', rest: 90, autoRest: true, sound: true, vibrate: true, theme: 'system' },
+    settings: { unit: 'kg', rest: 90, autoRest: true, sound: true, vibrate: true, theme: 'system', accent: 'lime' },
     custom: [], plans: [], sessions: [], active: null,
   });
 
@@ -420,6 +420,11 @@
       <header class="top"><a class="icon-btn" href="javascript:history.back()" aria-label="Back">${ICON.back}</a><h1>Settings</h1></header>
       <div class="card">
         <div class="row between"><span>Appearance</span><div class="seg theme-seg">${[['system', 'Auto'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<button class="${st.theme === v ? 'on' : ''}" data-a="theme" data-v="${v}">${l}</button>`).join('')}</div></div>
+        <div class="accent-head"><span>Accent colour</span><span class="muted small">${esc(accentName(st.accent))}</span></div>
+        <div class="swatches">
+          ${Object.entries(ACCENTS).map(([k, a]) => `<button class="swatch ${st.accent === k ? 'on' : ''}" data-a="accent" data-v="${k}" style="--sw-d:${a.dark};--sw-l:${a.light}" aria-label="${a.name}" title="${a.name}"></button>`).join('')}
+          <label class="swatch custom ${st.accent && st.accent[0] === '#' ? 'on' : ''}" title="Custom colour" ${st.accent && st.accent[0] === '#' ? `style="--sw-d:${st.accent};--sw-l:${st.accent}"` : ''}><input type="color" data-f="accentCustom" value="${st.accent && st.accent[0] === '#' ? st.accent : '#ff6b35'}" aria-label="Pick a custom colour"></label>
+        </div>
       </div>
       <div class="card">
         <div class="row between"><span>Weight unit</span><div class="seg">${['kg', 'lb'].map((u) => `<button class="${st.unit === u ? 'on' : ''}" data-a="unit" data-u="${u}">${u}</button>`).join('')}</div></div>
@@ -802,6 +807,7 @@
   };
 
   // settings
+  A.accent = (el) => { S.settings.accent = el.dataset.v; save(); applyTheme(); render(true); };
   A.theme = (el) => { S.settings.theme = el.dataset.v; save(); applyTheme(); render(true); };
   A.unit = (el) => { S.settings.unit = el.dataset.u; save(); render(true); };
   A.export = () => {
@@ -867,6 +873,7 @@
       if (pc) pc.textContent = C.pace(exById(e.ex), s.distance, s.time);
     } else if (f === 'wname') { S.active.name = el.value; save(); }
     else if (f === 'exnote') { S.active.exercises[+el.dataset.e].notes = el.value; save(); }
+    else if (f === 'accentCustom') { S.settings.accent = el.value.toLowerCase(); applyTheme(); }
     else if (f === 'libq') { libQ = el.value; $('#libList').innerHTML = libList(); }
     else if (f === 'pickq') { pick.q = el.value; $('#pickList').innerHTML = pickList(); }
     else if (f === 'planName') { getPlan(el.dataset.p).name = el.value; save(); }
@@ -900,6 +907,8 @@
       if (el.type === 'checkbox') S.settings[k] = el.checked;
       else if (k === 'rest') { const t = C.parseTime(el.value); if (t != null) { S.settings.rest = t; el.value = C.fmtTime(t); } }
       save();
+    } else if (f === 'accentCustom') {
+      S.settings.accent = el.value.toLowerCase(); save(); applyTheme(); render(true);
     } else if (f === 'cdCustom') {
       const t = C.parseTime(el.value);
       if (t) { const was = T.cd.running; T.cd = { dur: t, running: false, end: 0, remain: t }; el.value = C.fmtTime(t); if (was) render(true); else tick(); }
@@ -952,6 +961,36 @@
   };
 
   // ================= theme =================
+  // Each accent has a brighter shade for dark mode and a deeper one for light mode so text stays readable.
+  const ACCENTS = {
+    lime: { name: 'Lime', dark: '#a3e635', light: '#3f8f12' },
+    green: { name: 'Green', dark: '#4ade80', light: '#15803d' },
+    teal: { name: 'Teal', dark: '#2dd4bf', light: '#0f766e' },
+    cyan: { name: 'Cyan', dark: '#22d3ee', light: '#0e7490' },
+    blue: { name: 'Blue', dark: '#60a5fa', light: '#1d4ed8' },
+    indigo: { name: 'Indigo', dark: '#818cf8', light: '#4338ca' },
+    violet: { name: 'Purple', dark: '#c084fc', light: '#7e22ce' },
+    pink: { name: 'Pink', dark: '#f472b6', light: '#be185d' },
+    red: { name: 'Red', dark: '#f87171', light: '#b91c1c' },
+    orange: { name: 'Orange', dark: '#fb923c', light: '#c2410c' },
+    gold: { name: 'Gold', dark: '#facc15', light: '#a16207' },
+    mono: { name: 'Mono', dark: '#e5e7eb', light: '#1f2937' },
+  };
+  const accentName = (a) => (ACCENTS[a] ? ACCENTS[a].name : a && a[0] === '#' ? `Custom ${a.toUpperCase()}` : 'Lime');
+  const hexRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const rgbHex = (c) => '#' + c.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('');
+  const lum = (h) => { const [r, g, b] = hexRgb(h).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  const mix = (h, target, t) => { const a = hexRgb(h), b = hexRgb(target); return rgbHex(a.map((v, i) => v + (b[i] - v) * t)); };
+  // nudge a colour toward white/black until it reads on the given background
+  function readable(h, bg, toward, min) { let c = h; for (let t = 0.08; contrast(c, bg) < min && t <= 1; t += 0.08) c = mix(h, toward, t); return c; }
+  function accentPair(a) {
+    if (ACCENTS[a]) return { dark: ACCENTS[a].dark, light: ACCENTS[a].light };
+    if (/^#[0-9a-f]{6}$/i.test(a || '')) return { dark: readable(a, '#181b22', '#ffffff', 4.5), light: readable(a, '#ffffff', '#000000', 4.5) };
+    return { dark: ACCENTS.lime.dark, light: ACCENTS.lime.light };
+  }
+  const inkFor = (h) => (contrast(h, '#ffffff') >= contrast(h, '#111111') ? '#ffffff' : '#111111');
+
   const darkMq = window.matchMedia('(prefers-color-scheme: dark)');
   function applyTheme() {
     const t = S.settings.theme;
@@ -959,6 +998,11 @@
     if (t === 'light' || t === 'dark') root.dataset.theme = t; else delete root.dataset.theme;
     try { localStorage.setItem('forge.theme', t); } catch (e) { /* ignore */ }
     const dark = t === 'dark' || (t !== 'light' && darkMq.matches);
+    const pair = accentPair(S.settings.accent);
+    try { localStorage.setItem('forge.accent', JSON.stringify(pair)); } catch (e) { /* ignore */ }
+    const acc = dark ? pair.dark : pair.light;
+    root.style.setProperty('--accent', acc);
+    root.style.setProperty('--accent-ink', inkFor(acc));
     document.querySelectorAll('meta[name="theme-color"]').forEach((m) => { m.content = dark ? '#0f1115' : '#f4f5f7'; m.removeAttribute('media'); });
   }
   darkMq.addEventListener && darkMq.addEventListener('change', applyTheme);

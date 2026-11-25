@@ -13,7 +13,7 @@ It's an installable web app (PWA): it works offline and keeps all data on your p
   - Holds: add seconds. Sleds and carries: add load once the full distance is covered, then go faster.
 - **Timers**: a rest timer starts automatically when you tick a set (adjustable ±15 s), plus a stopwatch with laps, a countdown, and intervals (Tabata, EMOM, 30/30, custom).
 - **History and progress**: past workouts, per-exercise history, an estimated 1RM or pace chart, and personal bests.
-- kg/lb, JSON backup export/import, light and dark mode, and the screen stays awake during a workout.
+- Light, dark or automatic theme, 12 accent colours plus a custom colour picker, kg/lb, JSON backup export/import, and the screen stays awake during a workout.
 
 ## Run it
 No build step. Serve the folder with any static server:
