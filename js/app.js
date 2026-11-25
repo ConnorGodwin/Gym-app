@@ -6,7 +6,7 @@
   const STORE = 'forge.v1';
   const DEFAULTS = () => ({
     v: 1,
-    settings: { unit: 'kg', rest: 90, autoRest: true, sound: true, vibrate: true },
+    settings: { unit: 'kg', rest: 90, autoRest: true, sound: true, vibrate: true, theme: 'system' },
     custom: [], plans: [], sessions: [], active: null,
   });
 
@@ -133,7 +133,7 @@
       ${a ? `<div class="card active-card">
           <div><div class="label">Workout in progress</div><div class="big">${esc(a.name)}</div><div class="muted"><span data-tick="elapsed"></span> elapsed</div></div>
           <a class="btn primary" href="#/workout">Resume</a></div>` : ''}
-      <div class="stats">
+      <div class="stats four">
         <div><b>${week.length}</b><span>workouts / 7 days</span></div>
         <div><b>${Math.round(C.toDisp(vol, unit())).toLocaleString()}</b><span>${unit()} lifted</span></div>
         <div><b>${km.toFixed(1)}</b><span>km cardio</span></div>
@@ -418,6 +418,9 @@
     const tog = (k, label) => `<label class="toggle"><span>${label}</span><input type="checkbox" data-f="setting" data-k="${k}" ${st[k] ? 'checked' : ''}></label>`;
     return `
       <header class="top"><a class="icon-btn" href="javascript:history.back()" aria-label="Back">${ICON.back}</a><h1>Settings</h1></header>
+      <div class="card">
+        <div class="row between"><span>Appearance</span><div class="seg theme-seg">${[['system', 'Auto'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<button class="${st.theme === v ? 'on' : ''}" data-a="theme" data-v="${v}">${l}</button>`).join('')}</div></div>
+      </div>
       <div class="card">
         <div class="row between"><span>Weight unit</span><div class="seg">${['kg', 'lb'].map((u) => `<button class="${st.unit === u ? 'on' : ''}" data-a="unit" data-u="${u}">${u}</button>`).join('')}</div></div>
         <label class="toggle"><span>Default rest</span><input class="short" data-f="setting" data-k="rest" inputmode="decimal" value="${C.fmtTime(st.rest)}"></label>
@@ -799,6 +802,7 @@
   };
 
   // settings
+  A.theme = (el) => { S.settings.theme = el.dataset.v; save(); applyTheme(); render(true); };
   A.unit = (el) => { S.settings.unit = el.dataset.u; save(); render(true); };
   A.export = () => {
     const blob = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' });
@@ -811,7 +815,7 @@
   A.reset = () => {
     if (!confirm('Erase ALL plans, history and settings on this device?')) return;
     if (!confirm('Really erase everything? This cannot be undone.')) return;
-    S = DEFAULTS(); exIndex = null; save(); go('train');
+    S = DEFAULTS(); exIndex = null; save(); applyTheme(); go('train');
   };
 
   // timer
@@ -913,7 +917,7 @@
         const d = JSON.parse(txt);
         if (!d || !Array.isArray(d.sessions) || !Array.isArray(d.plans)) throw new Error('bad file');
         if (!confirm(`Import ${d.sessions.length} workouts and ${d.plans.length} plans? This replaces the data on this device.`)) return;
-        S = normalise(d); exIndex = null; save(); toast('Backup imported'); go('train');
+        S = normalise(d); exIndex = null; save(); applyTheme(); toast('Backup imported'); go('train');
       }).catch(() => toast('That file is not a valid Forge backup'));
     }
   });
@@ -947,7 +951,26 @@
     x: svg('<path d="M18 6L6 18M6 6l12 12"/>'),
   };
 
+  // ================= theme =================
+  const darkMq = window.matchMedia('(prefers-color-scheme: dark)');
+  function applyTheme() {
+    const t = S.settings.theme;
+    const root = document.documentElement;
+    if (t === 'light' || t === 'dark') root.dataset.theme = t; else delete root.dataset.theme;
+    try { localStorage.setItem('forge.theme', t); } catch (e) { /* ignore */ }
+    const dark = t === 'dark' || (t !== 'light' && darkMq.matches);
+    document.querySelectorAll('meta[name="theme-color"]').forEach((m) => { m.content = dark ? '#0f1115' : '#f4f5f7'; m.removeAttribute('media'); });
+  }
+  darkMq.addEventListener && darkMq.addEventListener('change', applyTheme);
+
+  // select the whole value when tapping a number field, so it can be overwritten in one go
+  document.addEventListener('focusin', (ev) => {
+    const el = ev.target;
+    if (el.tagName === 'INPUT' && el.inputMode && el.inputMode !== 'text') setTimeout(() => { try { el.select(); } catch (e) { /* ignore */ } }, 0);
+  });
+
   // ================= boot =================
+  applyTheme();
   render();
   updateWakeLock();
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
