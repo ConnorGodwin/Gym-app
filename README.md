@@ -22,6 +22,9 @@ python3 -m http.server 8000   # then open http://localhost:8000
 ```
 To install it on your phone, host it (for example on GitHub Pages: Settings → Pages → deploy from this branch), open the URL, then choose **Add to Home Screen**.
 
+## Releasing updates
+Bump `VERSION` in `sw.js` with every change. Installed apps check for a new version on launch, on returning to the foreground and every 30 minutes, then show an "Update available – Refresh" banner. Settings also has a **Check for updates** button.
+
 ## Code
 - `js/exercises.js`: exercise library (one line per exercise, easy to extend)
 - `js/templates.js`: starter plans

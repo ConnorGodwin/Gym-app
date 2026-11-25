@@ -440,6 +440,11 @@
         <label class="btn block">Import backup<input type="file" accept="application/json,.json" data-f="import" hidden></label>
         <button class="btn block danger-ghost" data-a="reset">Erase all data</button>
       </div>
+      <h2>App</h2>
+      <div class="card">
+        <div class="row between"><span>Version</span><span class="muted" id="appVersion">${esc(appVersion || '–')}</span></div>
+        <button class="btn block" data-a="checkUpdate">Check for updates</button>
+      </div>
       <p class="muted small center">${S.sessions.length} workouts · ${S.plans.length} plans · ${exAll().length} exercises</p>`;
   };
 
@@ -1013,12 +1018,64 @@
     if (el.tagName === 'INPUT' && el.inputMode && el.inputMode !== 'text') setTimeout(() => { try { el.select(); } catch (e) { /* ignore */ } }, 0);
   });
 
+  // ================= updates =================
+  // A new service worker version means a new release. It waits until the user taps Refresh.
+  let swReg = null, appVersion = '', reloading = false, lastCheck = 0;
+  function showUpdateBanner() {
+    const el = $('#update');
+    el.innerHTML = `<span>✨ A new version of Forge is available</span><button class="btn small primary" data-a="applyUpdate">Refresh</button>`;
+    el.hidden = false;
+  }
+  function watchWorker(w) {
+    if (!w) return;
+    const ready = () => { if (w.state === 'installed' && navigator.serviceWorker.controller) showUpdateBanner(); };
+    ready();
+    w.addEventListener('statechange', ready);
+  }
+  async function checkForUpdate(manual) {
+    if (!swReg) { if (manual) toast('Updates need the installed web version'); return; }
+    lastCheck = Date.now();
+    try { await swReg.update(); } catch (e) { if (manual) toast('Couldn’t check – are you online?'); return; }
+    if (swReg.waiting) { watchWorker(swReg.waiting); return; }
+    if (manual) {
+      // give a just-found update a moment to install
+      setTimeout(() => { if (swReg.waiting) return; if (swReg.installing) toast('Downloading update…'); else toast('You’re on the latest version ✓'); }, 1200);
+    }
+  }
+  function readVersion() {
+    const c = navigator.serviceWorker.controller;
+    if (!c) return;
+    const ch = new MessageChannel();
+    ch.port1.onmessage = (e) => { appVersion = String(e.data || '').replace('forge-', ''); const el = $('#appVersion'); if (el) el.textContent = appVersion; };
+    c.postMessage('GET_VERSION', [ch.port2]);
+  }
+  function setupUpdates() {
+    if (!('serviceWorker' in navigator) || !location.protocol.startsWith('http')) return;
+    navigator.serviceWorker.register('sw.js').then((reg) => {
+      swReg = reg;
+      watchWorker(reg.waiting);
+      reg.addEventListener('updatefound', () => watchWorker(reg.installing));
+      readVersion();
+      checkForUpdate();
+    }).catch(() => {});
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloading) { reloading = true; location.reload(); } });
+    // check when the app comes back to the foreground (at most once a minute) and every 30 minutes while open
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - lastCheck > 60e3) checkForUpdate(); });
+    setInterval(() => checkForUpdate(), 30 * 60e3);
+  }
+  A.checkUpdate = () => checkForUpdate(true);
+  A.applyUpdate = () => {
+    // everything (including an in-progress workout) is already saved, so reloading is safe
+    const w = swReg && swReg.waiting;
+    $('#update').innerHTML = '<span>Updating…</span>';
+    if (w) w.postMessage('SKIP_WAITING'); else location.reload();
+    setTimeout(() => { if (!reloading) location.reload(); }, 3000);
+  };
+
   // ================= boot =================
   applyTheme();
   render();
   updateWakeLock();
-  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
-  }
+  setupUpdates();
   window.__forge = { get state() { return S; } }; // handy for debugging
 })();
