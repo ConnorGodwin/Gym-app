@@ -8,6 +8,7 @@ Live: https://connorgodwin.github.io/Gym-app/
 ## Features
 
 **Training**
+- Edit any past workout (date, duration, sets) or log one you missed; suggestions use only the workouts before that date.
 - Custom plans, or 34 templates in seven groups: strength (PPL, Upper/Lower, 5×5, powerlifting, calisthenics, kettlebell, beginner machines), running and endurance (Couch to 5K, 5K, 10K, half marathon, marathon, triathlon, swimming, rowing, cycling), HYROX and functional fitness, team sports (football, rugby, basketball/netball), racket and combat (tennis/padel/squash, boxing, MMA), outdoor (climbing, golf, ski prep), and health (daily mobility, posture, 50+ strength and balance, walking, yoga). Each plan has 1–5 working sets, rep ranges, weights and rest times.
 - 503 exercises (including sport sessions, agility/plyometrics and combat drills) and custom exercises. 137 have demo images (26 with short videos) and step-by-step instructions from [wger](https://wger.de), plus coaching cues and a YouTube link for every exercise.
 - Last session shown per set, and next-session suggestions based on double progression. RPE feeds in: very hard sets hold the weight, easy sets jump further.
@@ -35,6 +36,17 @@ No build step. Serve the folder with any static server:
 ```
 python3 -m http.server 8000   # then open http://localhost:8000
 ```
+
+## Tests
+Automated tests run on GitHub for every push (see the Actions tab). To run them locally:
+```
+cd tests
+npm ci
+npx playwright install chromium   # first time only
+npm test                          # unit tests + browser tests
+```
+- `tests/unit`: progression maths, and checks that the exercises, templates, demos and offline-cache list fit together (Node's built-in test runner).
+- `tests/e2e`: every screen and feature in a real browser, at Android and iPhone sizes, with no sideways scrolling at 320–412 px in light and dark mode. Open Food Facts is mocked, and any JavaScript error fails the test.
 
 ## Releasing updates
 Bump `VERSION` in `sw.js` with every change. Installed apps check for a new version on launch, on returning to the foreground and every 30 minutes, then show an "Update available – Refresh" banner.

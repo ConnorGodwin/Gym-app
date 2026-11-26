@@ -2,6 +2,10 @@
 
 The version number matches `VERSION` in `sw.js` and Settings → App in the app.
 
+## v12
+- Edit a saved workout (sets, exercises, date, time, duration), or log a past workout from scratch or from a plan day.
+- Automated tests (unit and browser) that run on GitHub for every push.
+
 ## v11
 - Body units: bodyweight in kg, lb or st & lb; height in cm or ft & in; measurements in cm or in. These are separate from the lifting unit.
 - 24 new plan templates (34 in total), grouped by category: running distances, triathlon, swimming, rowing, team, racket and combat sports, climbing, golf, ski prep, and health and mobility.

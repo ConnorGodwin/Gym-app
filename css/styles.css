@@ -425,3 +425,11 @@ input.short { width: 90px; text-align: center; }
 #weightForm { flex-wrap: wrap; }
 #weightForm .pair2 { flex: 1 1 100%; order: -1; }
 #weightForm .pair2 input { flex: 1 1 0; }
+/* editing / back-filling a workout */
+.edit-head { align-items: flex-start; }
+.edit-head .label { margin-bottom: 2px; }
+.edit-head .when { display: flex; gap: 8px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+.edit-head .when input[type=datetime-local] { flex: 1 1 170px; min-width: 0; padding: 8px; }
+.edit-head .dur { display: inline-flex; align-items: center; gap: 4px; }
+.edit-head .dur input { width: 64px; text-align: center; padding: 8px 4px; }
+.edit-btns { display: flex; flex-direction: column; gap: 6px; }

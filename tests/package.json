@@ -1,0 +1,13 @@
+{
+  "name": "forge-tests",
+  "private": true,
+  "description": "Automated tests for the Forge app. Run from this folder: npm test",
+  "scripts": {
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "node --test unit/*.test.js",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

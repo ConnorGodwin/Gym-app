@@ -101,10 +101,13 @@
   // Warm-up sets are ignored, and deload-week sessions are skipped so suggestions build on normal weeks.
   const isWarm = (s) => s && s.type === 'w';
   const working = (sets) => (sets || []).filter((s) => !isWarm(s));
-  function historyFor(exId, occ = 0, includeDeload) {
+  // ctx {before, exclude}: when editing or back-filling, only look at workouts before that date
+  const draftCtx = () => (S.active && S.active.mode ? { before: S.active.start, exclude: S.active.editOf } : null);
+  function historyFor(exId, occ = 0, includeDeload, ctx) {
     const out = [];
     for (const s of S.sessions) {
       if (s.deload && !includeDeload) continue;
+      if (ctx && (s.id === ctx.exclude || s.start >= ctx.before)) continue;
       const entries = s.exercises.filter((e) => e.ex === exId && working(e.sets).length);
       if (!entries.length) continue;
       const e = entries[Math.min(occ, entries.length - 1)];
@@ -182,8 +185,8 @@
     return `
       <header class="top"><h1>Train</h1><a class="icon-btn" href="#/settings" aria-label="Settings">${ICON.gear}</a></header>
       ${a ? `<div class="card active-card">
-          <div><div class="label">Workout in progress</div><div class="big">${esc(a.name)}</div><div class="muted"><span data-tick="elapsed"></span> elapsed</div></div>
-          <a class="btn primary" href="#/workout">Resume</a></div>` : ''}
+          <div><div class="label">${a.mode === 'edit' ? 'Editing a workout' : a.mode === 'backfill' ? 'Logging a past workout' : 'Workout in progress'}</div><div class="big">${esc(a.name)}</div><div class="muted">${a.mode ? fmtDateLong(a.start) : '<span data-tick="elapsed"></span> elapsed'}</div></div>
+          <a class="btn primary" href="#/workout">${a.mode ? 'Continue' : 'Resume'}</a></div>` : ''}
       <div class="stats four">
         <div><b>${week.length}</b><span>workouts / 7 days</span></div>
         <div><b>${Math.round(C.toDisp(vol, unit())).toLocaleString()}</b><span>${unit()} lifted</span></div>
@@ -214,13 +217,24 @@
     const a = S.active;
     if (!a) return `<header class="top"><h1>Workout</h1></header><div class="card empty"><p>No workout in progress.</p><a class="btn primary" href="#/train">Go to Train</a></div>`;
     const occ = {};
-    return `
+    const head = a.mode ? `
+      <header class="top sticky edit-head">
+        <div class="grow">
+          <div class="label">${a.mode === 'edit' ? 'Editing workout' : 'Logging a past workout'}</div>
+          <input class="title-input" data-f="wname" value="${esc(a.name)}" aria-label="Workout name">
+          <div class="when"><input type="datetime-local" data-f="wstart" value="${localDT(a.start)}" max="${localDT(Date.now())}" aria-label="Date and time"><span class="dur"><input data-f="wdur" inputmode="numeric" value="${a.durMin}" aria-label="Duration in minutes"><span class="muted small">min</span></span></div>
+        </div>
+        <div class="edit-btns"><button class="btn small" data-a="cancelWorkout">Cancel</button><button class="btn small primary" data-a="finishWorkout">Save</button></div>
+      </header>` : `
       <header class="top sticky">
         <div class="grow"><input class="title-input" data-f="wname" value="${esc(a.name)}" aria-label="Workout name"><div class="muted small"><span data-tick="elapsed"></span></div></div>
         <button class="btn small danger-ghost" data-a="cancelWorkout">Discard</button>
         <button class="btn small primary" data-a="finishWorkout">Finish</button>
-      </header>
+      </header>`;
+    return `${head}
       ${a.deload ? `<div class="card deload-banner"><b>Deload week</b><div class="small muted">Lighter weights and one set fewer to recover. Your normal progression resumes next week.</div></div>` : ''}
+      ${a.mode === 'edit' ? '<p class="muted small">Change any weight, reps or time, add or remove sets and exercises, then tap Save. Unticked sets are removed.</p>' : ''}
+      ${a.mode === 'backfill' ? '<p class="muted small">Enter what you did and tick each set you completed, then tap Save.</p>' : ''}
       ${a.exercises.map((e, i) => { occ[e.ex] = (occ[e.ex] || 0) + 1; return exCard(e, i, occ[e.ex] - 1); }).join('')}
       <button class="btn block" data-a="addExercise">＋ Add exercise</button>
     `;
@@ -228,7 +242,7 @@
 
   function exCard(e, i, occ) {
     const ex = exById(e.ex);
-    const hist = historyFor(e.ex, occ);
+    const hist = historyFor(e.ex, occ, false, draftCtx());
     const last = hist[0];
     const fields = fieldsOf(ex);
     const label = (f) => ({ weight: (ex.type === 'bodyweight' || ex.type === 'timed') ? '+' + unit() : unit(), reps: 'Reps', time: 'Time', distance: ex.dist || 'm' }[f]);
@@ -483,6 +497,7 @@
   VIEWS.history = () => `
     <header class="top"><h1>Progress</h1><a class="icon-btn" href="#/settings" aria-label="Settings">${ICON.gear}</a></header>
     ${Forge.progressTabs ? Forge.progressTabs('history') : ''}
+    <button class="btn block" data-a="backfill">＋ Log a past workout</button>
     ${S.sessions.length ? S.sessions.map((s) => {
       const vol = s.exercises.reduce((a, e) => a + volume(exById(e.ex), e.sets), 0);
       return `<a class="card list-item" href="#/session/${s.id}"><div><h3>${esc(s.name)}</h3>
@@ -500,7 +515,7 @@
         <div class="card"><a class="ex-name" href="#/exercise/${encodeURIComponent(ex.id)}">${esc(ex.name)}</a>
           <div class="small">${e.sets.map((x, i) => `<span class="setpill ${isWarm(x) ? 'warm' : ''}">${setLabel(e.sets, i)}: ${esc(fmtSet(ex, x))}${x.rpe ? ` @${x.rpe}` : ''}${ex.type === 'cardio' && x.distance && x.time ? ` (${esc(C.pace(ex, x.distance, x.time))})` : ''}</span>`).join(' ')}</div>
           ${e.notes ? `<div class="muted small">${esc(e.notes)}</div>` : ''}</div>`; }).join('')}
-      <div class="row gap"><button class="btn grow primary" data-a="repeatSession" data-id="${s.id}" ${S.active ? 'disabled' : ''}>Repeat workout</button><button class="btn grow danger-ghost" data-a="delSession" data-id="${s.id}">Delete</button></div>`;
+      <div class="row gap"><button class="btn grow" data-a="editSession" data-id="${s.id}">Edit</button><button class="btn grow primary" data-a="repeatSession" data-id="${s.id}" ${S.active ? 'disabled' : ''}>Repeat</button><button class="btn grow danger-ghost" data-a="delSession" data-id="${s.id}">Delete</button></div>`;
   };
 
   // ---------- Settings ----------
@@ -604,7 +619,7 @@
   function tick() {
     const now = Date.now();
     const set = (k, v) => { const el = document.querySelector(`[data-tick="${k}"]`); if (el && el.textContent !== v) el.textContent = v; };
-    if (S.active) set('elapsed', C.fmtTime((now - S.active.start) / 1000));
+    if (S.active && !S.active.mode) set('elapsed', C.fmtTime((now - S.active.start) / 1000));
     // rest timer
     const r = S.active && S.active.rest;
     if (r) {
@@ -651,7 +666,7 @@
   }
 
   function startRest(secs) {
-    if (!S.active || !secs) return;
+    if (!S.active || S.active.mode || !secs) return;
     S.active.rest = { end: Date.now() + secs * 1000, total: secs };
     save(); renderRestBar();
   }
@@ -677,7 +692,7 @@
   const buzz = (p) => { if (S.settings.vibrate && navigator.vibrate) try { navigator.vibrate(p); } catch (e) { /* ignore */ } };
   let wake = null;
   async function updateWakeLock() {
-    const want = !!S.active || T.sw.running || T.cd.running || T.iv.running || !!(S.race && S.race.start && !S.race.done);
+    const want = !!(S.active && !S.active.mode) || T.sw.running || T.cd.running || T.iv.running || !!(S.race && S.race.start && !S.race.done);
     try {
       if (want && !wake && 'wakeLock' in navigator && document.visibilityState === 'visible') {
         wake = await navigator.wakeLock.request('screen');
@@ -690,7 +705,7 @@
   // ================= workout actions =================
   function buildExercise(cfg, occ, deload) {
     const ex = exById(cfg.ex);
-    let sg = C.suggest(ex, historyFor(cfg.ex, occ), cfg, unit());
+    let sg = C.suggest(ex, historyFor(cfg.ex, occ, false, draftCtx()), cfg, unit());
     if (deload) sg = C.deload(ex, sg, unit());
     return {
       ex: cfg.ex, ss: cfg.ss || null,
@@ -727,16 +742,18 @@
       }),
     })).filter((e) => e.sets.length);
     if (!exercises.length) {
+      if (a.mode) { toast('Tick at least one set to save'); return; }
       if (!confirm('No sets are ticked as done. Discard this workout?')) return;
       S.active = null; save(); updateWakeLock(); go('train'); return;
     }
     const undone = a.exercises.reduce((n, e) => n + e.sets.filter((s) => !s.done).length, 0);
+    if (a.mode && a.start > Date.now()) { toast('The date can’t be in the future'); return; }
     if (undone && !confirm(`${undone} set${undone > 1 ? 's are' : ' is'} not ticked and won't be saved. Finish anyway?`)) return;
     // personal bests (estimated 1RM for weighted lifts, best pace for cardio)
     const prs = [];
     exercises.forEach((e) => {
       const ex = exById(e.ex);
-      const hist = historyFor(e.ex, 0, true);
+      const hist = historyFor(e.ex, 0, true, draftCtx());
       if (!hist.length || !working(e.sets).length) return;
       if (ex.type === 'strength') {
         const best = Math.max(...hist.flatMap((h) => h.sets.map((s) => C.e1rm(+s.weight || 0, +s.reps || 0))));
@@ -748,10 +765,14 @@
         if (Math.min(...e.sets.map(p)) < best) prs.push(e.ex);
       }
     });
-    const session = Store.touch({ id: a.id, name: a.name, planId: a.planId, dayId: a.dayId, start: a.start, end: Date.now(), exercises, prs, ...(a.deload ? { deload: true } : {}) });
-    S.sessions.unshift(session);
+    const end = a.mode ? a.start + Math.max(1, a.durMin || 1) * 60000 : Date.now();
+    const session = Store.touch({ id: a.id, name: a.name, planId: a.planId, dayId: a.dayId, start: a.start, end, exercises, prs, ...(a.deload ? { deload: true } : {}) });
+    if (a.mode === 'edit') S.sessions = S.sessions.map((x) => (x.id === a.editOf ? session : x));
+    else S.sessions.unshift(session);
+    S.sessions.sort((x, y) => y.start - x.start);
+    const mode = a.mode;
     S.active = null; save(); updateWakeLock();
-    toast(prs.length ? `Saved – ${prs.length} new best${prs.length > 1 ? 's' : ''}! 🏆` : 'Workout saved 💪');
+    toast(mode === 'edit' ? 'Workout updated' : mode === 'backfill' ? 'Past workout added' : prs.length ? `Saved – ${prs.length} new best${prs.length > 1 ? 's' : ''}! 🏆` : 'Workout saved 💪');
     HOOKS.afterFinish.forEach((f) => f(session));
     go('session/' + session.id);
   }
@@ -863,7 +884,7 @@
   };
   A.fill = (el) => {
     const i = +el.dataset.e, e = S.active.exercises[i];
-    const src = el.dataset.mode === 'last' ? (historyFor(e.ex, occurrenceIndex(i))[0] || {}).sets : e.sugg.sets;
+    const src = el.dataset.mode === 'last' ? (historyFor(e.ex, occurrenceIndex(i), false, draftCtx())[0] || {}).sets : e.sugg.sets;
     if (!src) return;
     e.sets = e.sets.map((s, j) => (s.done || isWarm(s) ? s : { ...(src[Math.min(workIndex(e.sets, j), src.length - 1)]), type: s.type, done: false }));
     save(); render(true);
@@ -893,7 +914,53 @@
   A.exMove = (el) => { move(S.active.exercises, +el.dataset.e, +el.dataset.dir); save(); closeModal(); render(true); };
   A.exRemove = (el) => { if (!confirm('Remove this exercise from the workout?')) return; S.active.exercises.splice(+el.dataset.e, 1); save(); closeModal(); render(true); };
   A.finishWorkout = finishWorkout;
-  A.cancelWorkout = () => { if (confirm('Discard this workout? Nothing will be saved.')) { S.active = null; save(); updateWakeLock(); go('train'); } };
+  A.cancelWorkout = () => {
+    const a = S.active;
+    if (a && a.mode) {
+      if (!confirm(a.mode === 'edit' ? 'Discard your changes?' : 'Discard this past workout?')) return;
+      S.active = null; save(); go(a.mode === 'edit' ? 'session/' + a.editOf : 'history'); return;
+    }
+    if (confirm('Discard this workout? Nothing will be saved.')) { S.active = null; save(); updateWakeLock(); go('train'); }
+  };
+  // ---------- edit a saved workout / log a missed one ----------
+  const pad2 = (n) => String(n).padStart(2, '0');
+  function localDT(t) { const d = new Date(t); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
+  const busy = () => { if (!S.active) return false; toast(S.active.mode ? 'Save or cancel the workout you’re editing first' : 'Finish or discard your current workout first'); return true; };
+  A.editSession = (el) => {
+    if (busy()) return;
+    const s = S.sessions.find((x) => x.id === el.dataset.id);
+    S.active = {
+      id: s.id, mode: 'edit', editOf: s.id, name: s.name, planId: s.planId || null, dayId: s.dayId || null, start: s.start,
+      durMin: Math.max(1, Math.round((s.end - s.start) / 60000)), deload: !!s.deload, rest: null,
+      exercises: s.exercises.map((e) => ({ ex: e.ex, ss: e.ss || null, notes: e.notes || '', sugg: null, cfg: { sets: e.sets.length, rest: 0 }, sets: e.sets.map((x) => ({ ...x, type: x.type || 'n', done: true })) })),
+    };
+    save(); go('workout');
+  };
+  A.backfill = () => {
+    if (busy()) return;
+    const y = new Date(Date.now() - 864e5); y.setHours(18, 0, 0, 0);
+    showModal(`${sheetHead('Log a past workout')}
+      <form id="backfillForm" class="form">
+        <label>Date and time<input type="datetime-local" name="start" value="${localDT(y.getTime())}" max="${localDT(Date.now())}" required></label>
+        <label>Duration (minutes)<input name="dur" inputmode="numeric" value="60"></label>
+        <label>Start from<select name="from"><option value="">Empty workout</option>${S.plans.map((p) => p.days.map((d) => `<option value="${p.id}|${d.id}">${esc(p.name)} – ${esc(d.name)}</option>`).join('')).join('')}</select></label>
+        <p class="muted small">Suggestions and “last time” compare against workouts before this date.</p>
+        <button class="btn block primary">Continue</button>
+      </form>`);
+  };
+  HOOKS.submit.backfillForm = (form, fd) => {
+    const start = new Date(fd.start).getTime();
+    if (!start || start > Date.now()) { toast('Pick a date in the past'); return; }
+    const [pid, did] = (fd.from || '').split('|');
+    const plan = pid && getPlan(pid), day = plan && plan.days.find((d) => d.id === did);
+    S.active = { id: uid(), mode: 'backfill', editOf: null, name: day ? `${plan.name} – ${day.name}` : `Workout ${fmtDate(start, { weekday: 'short', day: 'numeric', month: 'short' })}`,
+      planId: plan ? plan.id : null, dayId: day ? day.id : null, start, durMin: Math.max(1, parseInt(fd.dur, 10) || 60), deload: false, rest: null, exercises: [] };
+    const occ = {};
+    if (day) S.active.exercises = day.exercises.map((c) => { occ[c.ex] = (occ[c.ex] || 0) + 1; return buildExercise(c, occ[c.ex] - 1, false); });
+    save(); closeModal(); go('workout');
+  };
+  HOOKS.change.wstart = (el) => { const t = new Date(el.value).getTime(); if (t) { S.active.start = t; save(); } };
+  HOOKS.change.wdur = (el) => { const n = parseInt(el.value, 10); if (n > 0) { S.active.durMin = n; save(); } };
   A.restAdj = (el) => { const r = S.active && S.active.rest; if (!r) return; r.end += +el.dataset.v * 1000; r.total = Math.max(1, r.total + +el.dataset.v); save(); tick(); };
   A.restSkip = () => { if (S.active) { S.active.rest = null; save(); renderRestBar(); } };
 
