@@ -2,7 +2,6 @@
 (function () {
   'use strict';
   const F = window.Forge;
-  if (!F || !F.HOOKS) return; // core didn't load (stale offline copy) – index.html recovers
   const { esc, HOOKS, VIEWS, ICON, C } = F;
   const S = () => F.S;
   const MUSCLES = ['Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Forearms', 'Core', 'Quads', 'Hamstrings', 'Glutes', 'Calves'];

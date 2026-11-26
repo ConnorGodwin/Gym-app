@@ -2,7 +2,6 @@
 (function () {
   'use strict';
   const F = window.Forge;
-  if (!F || !F.HOOKS) return; // core didn't load (stale offline copy) – index.html recovers
   const { esc, HOOKS, A, VIEWS, ICON } = F;
   const S = () => F.S;
   const lenUnit = () => (F.unit() === 'lb' ? 'in' : 'cm');

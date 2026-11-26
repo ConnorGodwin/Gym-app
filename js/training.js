@@ -3,7 +3,6 @@
 (function () {
   'use strict';
   const F = window.Forge;
-  if (!F || !F.HOOKS) return; // core didn't load (stale offline copy) – index.html recovers
   const { esc, HOOKS, A, C } = F;
   const DAY = 864e5;
 
@@ -111,11 +110,22 @@
   // ---------- how-to ----------
   HOOKS.exerciseExtras.push((ex) => {
     const cues = window.HOWTO[ex.id];
+    const d = (window.DEMOS || {})[ex.id];
     const q = encodeURIComponent(`${ex.name} exercise form`);
+    const imgs = (d && d.i) || [];
+    const media = d && (d.v || imgs.length) ? `
+        ${d.v ? `<video class="demo-vid" src="videos/exercises/${d.v}.mp4" ${imgs.length ? `poster="images/exercises/${imgs[0]}.webp"` : ''} controls muted loop playsinline preload="none"></video>` : ''}
+        ${imgs.length ? `<div class="demo-imgs ${imgs.length > 1 ? 'multi' : ''}">${imgs.map((i, n) => `<img src="images/exercises/${i}.webp" alt="${esc(ex.name)} demonstration ${n + 1}" loading="lazy">`).join('')}</div>` : ''}` : '';
+    const steps = d && d.s && d.s.length ? d.s : null;
     return `<h2>How to</h2>
-      <div class="card">
-        ${cues ? `<ol class="cues">${cues.map((c) => `<li>${esc(c)}</li>`).join('')}</ol>` : '<p class="muted small">No written cues for this one yet. Watch a demo below.</p>'}
-        <a class="btn block" href="https://www.youtube.com/results?search_query=${q}" target="_blank" rel="noopener">▶ Watch a demo</a>
+      <div class="card howto">
+        ${media}
+        ${cues ? `<div class="label-sm">Coaching cues</div><ol class="cues">${cues.map((c) => `<li>${esc(c)}</li>`).join('')}</ol>` : ''}
+        ${steps ? (cues ? `<details class="steps"><summary>Step-by-step instructions</summary><ol class="cues">${steps.map((s) => `<li>${esc(s)}</li>`).join('')}</ol></details>`
+          : `<div class="label-sm">Step by step</div><ol class="cues">${steps.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>`) : ''}
+        ${!cues && !steps && !media ? '<p class="muted small">No demo for this one yet. Watch one below.</p>' : ''}
+        ${d ? `<p class="credit">${d.v || imgs.length ? 'Images' + (d.v ? ' & video' : '') : 'Instructions'}: ${esc(d.c)} · <a href="https://wger.de/en/exercise/${d.w}/view/" target="_blank" rel="noopener">wger.de</a></p>` : ''}
+        <a class="btn block" href="https://www.youtube.com/results?search_query=${q}" target="_blank" rel="noopener">▶ More demos on YouTube</a>
       </div>`;
   });
 

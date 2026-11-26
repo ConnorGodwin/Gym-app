@@ -9,7 +9,7 @@ Live: https://connorgodwin.github.io/Gym-app/
 
 **Training**
 - Custom plans (or templates: PPL, Upper/Lower, Full Body, 5×5, HYROX, 5K, cycling, bodyweight), 1–5 working sets, rep ranges, weights, rest times.
-- 441 exercises, custom exercises, and how-to cues with a "Watch a demo" link.
+- 441 exercises and custom exercises. 137 have demo images (26 with short videos) and step-by-step instructions from [wger](https://wger.de), plus coaching cues and a YouTube link for every exercise.
 - Last session shown per set, and next-session suggestions based on double progression. RPE feeds in: very hard sets hold the weight, easy sets jump further.
 - Warm-up sets (auto ramp), set types (warm-up, drop, failure), RPE per set, plate calculator, supersets (rest only after the last exercise).
 - Weekly schedule with an "Up next" card and week strip, and optional deload weeks (about 10% lighter, one set fewer).
@@ -50,6 +50,7 @@ Bump `VERSION` in `sw.js` with every change. Installed apps check for a new vers
 | `js/body.js` | Weight, measurements, photos |
 | `js/progress.js` | Overview, heat-map, muscle map, records, achievements |
 | `js/exercises.js`, `js/templates.js`, `js/howto.js` | Exercise library, starter plans, coaching cues |
+| `js/demos.js`, `images/exercises`, `videos/exercises` | Exercise demos from wger |
 
 ## Adding a cloud database later
 The data layer is built so sync can be added without touching the screens:
@@ -57,3 +58,6 @@ The data layer is built so sync can be added without touching the screens:
 - Storage goes through an adapter with `load()` and `save()`. A sync adapter (for example Supabase or Firebase) can push records where `updatedAt > lastSync`, apply tombstones, pull remote changes, and resolve conflicts by latest `updatedAt`.
 - `Store.SCHEMA` and `MIGRATIONS` upgrade old saves and backups.
 - Progress photos are stored separately (IndexedDB, keyed by the record id), so they can go to file storage.
+
+## Credits
+Exercise images, videos and step-by-step instructions come from [wger](https://wger.de), the free and open-source workout manager. They are by wger contributors and licensed CC BY-SA 3.0/4.0 (a few CC0/CC BY); each exercise page shows its credit and links to the source. Videos were re-encoded to smaller H.264 files, and images converted to WebP. Food data comes from [Open Food Facts](https://openfoodfacts.org) (ODbL). Barcode scanning uses [ZXing](https://github.com/zxing-js/library) (Apache-2.0).

@@ -3,7 +3,6 @@
 (function () {
   'use strict';
   const F = window.Forge;
-  if (!F || !F.HOOKS) return; // core didn't load (stale offline copy) – index.html recovers
   const { esc, HOOKS, A, VIEWS, ICON } = F;
   const MEALS = [['breakfast', 'Breakfast'], ['lunch', 'Lunch'], ['dinner', 'Dinner'], ['snacks', 'Snacks']];
   const mealName = (m) => (MEALS.find((x) => x[0] === m) || [m, m])[1];

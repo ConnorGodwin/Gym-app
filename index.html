@@ -37,28 +37,12 @@
   <script src="js/progression.js"></script>
   <script src="js/store.js"></script>
   <script src="js/howto.js"></script>
+  <script src="js/demos.js"></script>
   <script src="js/app.js"></script>
   <script src="js/training.js"></script>
   <script src="js/nutrition.js"></script>
   <script src="js/body.js"></script>
   <script src="js/progress.js"></script>
   <script src="js/main.js"></script>
-  <script>
-    // Safety net for the jump from v7: its offline worker can serve stale scripts on the first launch
-    // after an update. If anything didn't load as this version, switch to the new worker and reload once.
-    (function () {
-      var ok = window.Forge && window.Forge.booted && window.Core && window.Core.plates && window.Store;
-      var key = 'forge.recover';
-      if (ok) { try { sessionStorage.removeItem(key); } catch (e) {} return; }
-      var tries = 0; try { tries = +sessionStorage.getItem(key) || 0; sessionStorage.setItem(key, tries + 1); } catch (e) {}
-      if (tries >= 2 || !navigator.serviceWorker) return;
-      navigator.serviceWorker.register('sw.js').then(function (reg) {
-        navigator.serviceWorker.addEventListener('controllerchange', function () { location.reload(); });
-        var w = reg.waiting || reg.installing;
-        if (w) w.postMessage('SKIP_WAITING');
-        else reg.update().then(function () { var n = reg.waiting || reg.installing; if (n) n.postMessage('SKIP_WAITING'); else location.reload(); });
-      }).catch(function () { location.reload(); });
-    })();
-  </script>
 </body>
 </html>

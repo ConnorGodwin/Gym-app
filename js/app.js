@@ -1,18 +1,6 @@
 /* Forge – workout tracker. Vanilla JS, data stored on-device in localStorage. */
 (function () {
   'use strict';
-  // Compatibility: an older installed version (v7) can serve its cached index.html, which only loads
-  // exercises/templates/progression/app.js. If that happens, load the rest of this release ourselves.
-  if (!window.Store) {
-    const files = ['js/store.js', 'js/howto.js', 'js/app.js', 'js/training.js', 'js/nutrition.js', 'js/body.js', 'js/progress.js', 'js/main.js'];
-    (function next(i) {
-      if (i >= files.length) return;
-      const el = document.createElement('script');
-      el.src = files[i]; el.onload = el.onerror = () => next(i + 1);
-      document.body.appendChild(el);
-    })(0);
-    return;
-  }
   const C = window.Core;
   const MAX = C.MAX_SETS;
   const Forge = window.Forge = window.Forge || {};
@@ -46,6 +34,8 @@
     if (!exIndex) { exIndex = {}; exAll().forEach((e) => { exIndex[e.id] = e; }); }
     return exIndex[id] || { id, name: String(id).replace(/-/g, ' '), category: 'Other', equipment: 'Other', type: 'strength' };
   }
+  // small demo picture from js/demos.js (wger), or an empty placeholder
+  const thumb = (id) => { const d = window.DEMOS && window.DEMOS[id]; return d && d.i ? `<img class="exthumb" src="images/exercises/${d.i[0]}.webp" alt="" loading="lazy">` : '<span class="exthumb none" aria-hidden="true"></span>'; };
   const fieldsOf = (ex) => C.SET_FIELDS[ex.type] || C.SET_FIELDS.strength;
 
   // Past performances of an exercise, newest first. `occ` matches the n-th time the exercise
@@ -193,7 +183,7 @@
       <div class="card ex-card ${ss ? 'ss' : ''} ${ss && ss.first ? 'ss-first' : ''} ${ss && ss.last ? 'ss-last' : ''}" id="ex-${i}">
         ${ss ? `<div class="ss-tag">Superset ${ss.letter}${ss.pos}</div>` : ''}
         <div class="row between">
-          <a class="ex-name" href="#/exercise/${encodeURIComponent(ex.id)}">${esc(ex.name)}</a>
+          <a class="ex-name with-thumb" href="#/exercise/${encodeURIComponent(ex.id)}">${thumb(ex.id)}<span>${esc(ex.name)}</span></a>
           <button class="icon-btn" data-a="exMenu" data-e="${i}" aria-label="Exercise options">${ICON.dots}</button>
         </div>
         <div class="muted small">${esc(ex.category)} · ${esc(ex.equipment)}${e.cfg && e.cfg.rest ? ` · rest ${C.fmtTime(e.cfg.rest)}` : ''}</div>
@@ -364,7 +354,7 @@
     if (!list.length) return '<p class="muted">No matches. Add it as a custom exercise.</p>';
     return list.map((e) => {
       const h = historyFor(e.id)[0];
-      return `<a class="list-item plain" href="#/exercise/${encodeURIComponent(e.id)}"><div><div>${esc(e.name)}</div><div class="muted small">${esc(e.category)} · ${esc(e.equipment)}</div></div>${h ? `<span class="muted small right">${esc(fmtSet(e, h.sets[0], true))}<br>${fmtDate(h.date)}</span>` : '<span class="chev">›</span>'}</a>`;
+      return `<a class="list-item plain" href="#/exercise/${encodeURIComponent(e.id)}">${thumb(e.id)}<div class="grow"><div>${esc(e.name)}</div><div class="muted small">${esc(e.category)} · ${esc(e.equipment)}</div></div>${h ? `<span class="muted small right">${esc(fmtSet(e, h.sets[0], true))}<br>${fmtDate(h.date)}</span>` : '<span class="chev">›</span>'}</a>`;
     }).join('');
   }
 
@@ -714,7 +704,7 @@
       <button class="btn block" data-a="newCustom">＋ Create custom exercise</button>`);
   }
   const pickChips = () => ['', ...window.EX_CATEGORIES, ...(S.custom.length ? ['Custom'] : [])].map((c) => `<button class="chip ${pick.cat === c ? 'on' : ''}" data-a="pickCat" data-c="${esc(c)}">${c || 'All'}</button>`).join('');
-  const pickList = () => filterEx(pick.q, pick.cat).map((e) => `<button class="list-item plain" data-a="pick" data-id="${esc(e.id)}"><div><div>${esc(e.name)}</div><div class="muted small">${esc(e.category)} · ${esc(e.equipment)}</div></div><span class="plus">＋</span></button>`).join('') || '<p class="muted">No matches.</p>';
+  const pickList = () => filterEx(pick.q, pick.cat).map((e) => `<button class="list-item plain" data-a="pick" data-id="${esc(e.id)}">${thumb(e.id)}<div class="grow"><div>${esc(e.name)}</div><div class="muted small">${esc(e.category)} · ${esc(e.equipment)}</div></div><span class="plus">＋</span></button>`).join('') || '<p class="muted">No matches.</p>';
 
   function defaultCfg(exId) {
     const ex = exById(exId);
@@ -1222,17 +1212,8 @@
     getPlan, getDay, defaultCfg, sheetHead, beep, buzz, updateWakeLock, ICON, VIEWS, A, HOOKS, C, T,
   });
   Forge.boot = () => {
-    // bring an older cached page shell up to date (new tabs, update banner)
-    if (!document.getElementById('update')) { const d = document.createElement('div'); d.id = 'update'; d.hidden = true; d.setAttribute('role', 'status'); document.body.appendChild(d); }
-    if (!document.querySelector('#nav a[data-tab="food"]')) {
-      const ic = (p) => `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
-      $('#nav').innerHTML = [['train', 'Train', '<path d="M6.5 6.5v11M17.5 6.5v11M3 9v6M21 9v6M6.5 12h11"/>'], ['plans', 'Plans', '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>'],
-        ['food', 'Food', '<path d="M7 3v8M4.5 3v5a2.5 2.5 0 0 0 5 0V3M7 11v10M17 21V3c-2.2 1.2-3.5 3.6-3.5 7v3H17"/>'], ['progress', 'Progress', '<path d="M3 20h18M6 16v-5M11 16V7M16 16v-7M21 4l-5 5-4-3-6 5"/>'],
-        ['timer', 'Timer', '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/>']].map(([t, l, p]) => `<a href="#/${t}" data-tab="${t}">${ic(p)}${l}</a>`).join('');
-    }
     applyTheme();
     render();
-    Forge.booted = true;
     Store.persist();
     updateWakeLock();
     setupUpdates();
