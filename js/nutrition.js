@@ -80,8 +80,8 @@
     const R = 52, Cc = 2 * Math.PI * R, pct = target ? Math.min(1, eaten / target) : 0, over = target && eaten > target;
     return `<svg class="ring" viewBox="0 0 120 120" role="img" aria-label="${r0(eaten)} of ${r0(target)} kcal">
       <circle cx="60" cy="60" r="${R}" fill="none" stroke="var(--surface-2)" stroke-width="10"/>
-      <circle cx="60" cy="60" r="${R}" fill="none" stroke="${over ? 'var(--warn)' : 'var(--accent)'}" stroke-width="10" stroke-linecap="round"
-        stroke-dasharray="${(pct * Cc).toFixed(1)} ${Cc.toFixed(1)}" transform="rotate(-90 60 60)"/>
+      ${pct > 0 ? `<circle cx="60" cy="60" r="${R}" fill="none" stroke="${over ? 'var(--warn)' : 'var(--accent)'}" stroke-width="10" stroke-linecap="round"
+        stroke-dasharray="${(pct * Cc).toFixed(1)} ${Cc.toFixed(1)}" transform="rotate(-90 60 60)"/>` : ''}
       <text x="60" y="56" text-anchor="middle" class="ring-num">${target ? Math.abs(r0(target - eaten)).toLocaleString() : r0(eaten).toLocaleString()}</text>
       <text x="60" y="76" text-anchor="middle" class="ring-lbl">${target ? (over ? 'kcal over' : 'kcal left') : 'kcal eaten'}</text></svg>`;
   }
@@ -213,8 +213,8 @@
     const title = add.ctx.to === 'recipe' ? 'Add ingredient' : `Add to ${mealName(add.ctx.meal)}`;
     let body = '';
     if (add.tab === 'search') {
-      body = `<form id="foodSearch" class="row gap nowrap"><input class="search grow" type="search" name="q" value="${esc(add.q)}" placeholder="Search foods, e.g. greek yogurt" enterkeyhint="search" autocomplete="off"><button class="btn primary">Search</button></form>
-        <label class="toggle small"><span>Search worldwide (default: UK products)</span><input type="checkbox" data-f="foodWorld" ${S().settings.foodRegion === 'world' ? 'checked' : ''}></label>
+      body = `<form id="foodSearch" class="searchrow"><input class="search" type="search" name="q" value="${esc(add.q)}" placeholder="e.g. beef mince, greek yogurt" enterkeyhint="search" autocomplete="off"><button class="btn primary">Search</button></form>
+        <div class="region"><span class="muted small">Products from</span>${[['uk', 'UK'], ['world', 'Worldwide']].map(([v, l]) => `<button class="chip ${(S().settings.foodRegion === 'world' ? 'world' : 'uk') === v ? 'on' : ''}" data-a="foodRegion" data-v="${v}">${l}</button>`).join('')}</div>
         <div id="foodResults">${resultsHtml()}</div>`;
     } else if (add.tab === 'scan') {
       body = `<div class="scanbox"><video id="scanVideo" playsinline muted></video><div class="scanline"></div></div>
@@ -235,74 +235,152 @@
         ${recent.length ? recent.slice(0, 60).map(foodRow).join('') : '<p class="muted small">Foods you add will appear here.</p>'}
         <button class="btn block" data-a="newFood">＋ Create a food</button>`;
     }
-    F.showModal(`<div class="row between"><h2>${title}</h2><button class="btn small" data-a="closeAdd">Close</button></div>
+    F.showModal(`${F.sheetHead(title, { close: 'closeAdd' })}
       <div class="seg wide">${tabsFor().map(([k, l]) => `<button class="${add.tab === k ? 'on' : ''}" data-a="addTab" data-v="${k}">${l}</button>`).join('')}</div>
       <div class="addbody">${body}</div>`);
     if (add.tab === 'scan') startScan();
   }
   const foodRow = (f) => `<button class="list-item plain" data-a="pickFood" data-id="${esc(f.id)}"><div><div>${esc(f.name)}${f.brand ? ` <span class="muted small">${esc(f.brand)}</span>` : ''}</div><div class="muted small">${r0(f.kcal)} kcal · P ${r1(f.p)} · C ${r1(f.c)} · F ${r1(f.f)} per 100 g</div></div><span class="plus">＋</span></button>`;
+  // results: [{code, name, brand, food, state: 'ok' | 'loading' | 'none'}]
   function resultsHtml() {
-    if (add.loading) return '<p class="muted center">Searching…</p>';
-    if (add.err) return `<p class="muted">${esc(add.err)}</p>`;
-    if (!add.results) return '<p class="muted small">Search the Open Food Facts database (millions of products), or create your own food under “Mine”.</p>';
-    if (!add.results.length) return '<p class="muted">No matches. Try fewer words, or create the food yourself under “Mine”.</p>';
-    return add.results.map((f, i) => `<button class="list-item plain" data-a="pickResult" data-i="${i}"><div><div>${esc(f.name)}${f.brand ? ` <span class="muted small">${esc(f.brand)}</span>` : ''}</div><div class="muted small">${r0(f.kcal)} kcal · P ${r1(f.p)} · C ${r1(f.c)} · F ${r1(f.f)} per 100 g</div></div><span class="plus">＋</span></button>`).join('');
+    if (add.loading) return '<p class="muted center pad">Searching…</p>';
+    if (!add.results) return add.err ? `<p class="muted">${esc(add.err)}</p>` : '<p class="muted small">Search millions of products from Open Food Facts, or create your own food under “Mine”.</p>';
+    const list = add.results.filter((r) => r.state !== 'none');
+    if (!list.length) return add.err ? `<p class="muted">${esc(add.err)}</p>` : '<p class="muted">No matches. Try fewer or different words, switch to Worldwide, or create the food under “Mine”.</p>';
+    return list.map((r) => {
+      const i = add.results.indexOf(r);
+      const head = `<div>${esc(r.name)}${r.brand ? ` <span class="muted small">${esc(r.brand)}</span>` : ''}</div>`;
+      if (r.state === 'loading') return `<div class="list-item plain loadrow"><div>${head}<div class="muted small">Loading nutrition…</div></div></div>`;
+      const f = r.food;
+      return `<button class="list-item plain" data-a="pickResult" data-i="${i}"><div>${head}<div class="muted small">${r0(f.kcal)} kcal · P ${r1(f.p)} · C ${r1(f.c)} · F ${r1(f.f)} per 100 g${f.incomplete ? ' · <span class="warn-t">incomplete data</span>' : ''}</div></div><span class="plus">＋</span></button>`;
+    }).join('') + (add.err ? `<p class="muted small">${esc(add.err)}</p>` : '');
   }
   A.addFood = (el) => openAdd({ to: 'diary', meal: el.dataset.m });
   A.addTab = (el) => { stopScan(); add.tab = el.dataset.v; sheet(); };
   A.closeAdd = () => { stopScan(); F.closeModal(); };
-  HOOKS.change.foodWorld = (el) => { S().settings.foodRegion = el.checked ? 'world' : 'uk'; F.save(); };
+  A.foodRegion = (el) => {
+    S().settings.foodRegion = el.dataset.v; F.save();
+    document.querySelectorAll('[data-a="foodRegion"]').forEach((b) => b.classList.toggle('on', b === el));
+    if (add.q) HOOKS.submit.foodSearch(null, { q: add.q });
+  };
 
   // ---------- Open Food Facts ----------
+  // Search uses the fast search service (names + barcodes), then nutrition comes from the reliable
+  // product endpoint. The old cgi/search.pl is only a fallback: it is often overloaded (503).
   const OFF_FIELDS = 'code,product_name,product_name_en,brands,nutriments,serving_quantity,serving_size';
+  const productCache = {};
+  function timeoutFetch(url, ms) {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), ms);
+    return fetch(url, { signal: ctl.signal }).finally(() => clearTimeout(t));
+  }
+  const prettyBrand = (b) => {
+    const v = Array.isArray(b) ? b[0] : String(b || '').split(',')[0];
+    return String(v || '').replace(/^[a-z]{2}:/, '').replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).trim();
+  };
   function fromOFF(p) {
     const n = p.nutriments || {};
     let kcal = n['energy-kcal_100g'];
     if (kcal == null && n.energy_100g != null) kcal = n.energy_100g / 4.184;
     const name = (p.product_name_en || p.product_name || '').trim();
-    if (!name || kcal == null) return null;
+    if (!name || kcal == null || isNaN(+kcal)) return null;
     const sq = parseFloat(p.serving_quantity);
     return {
-      id: 'off-' + p.code, name, brand: (p.brands || '').split(',')[0].trim(), barcode: p.code, source: 'off',
+      id: 'off-' + p.code, name, brand: prettyBrand(p.brands), barcode: p.code, source: 'off',
       kcal: +kcal || 0, p: +n.proteins_100g || 0, c: +n.carbohydrates_100g || 0, f: +n.fat_100g || 0,
+      ...([n.proteins_100g, n.carbohydrates_100g, n.fat_100g].some((v) => v == null || v === '') ? { incomplete: true } : {}),
       ...(sq > 0 ? { servingG: sq, servingLabel: p.serving_size || `${sq} g` } : {}),
     };
   }
-  async function offSearch(q) {
-    const host = S().settings.foodRegion === 'world' ? 'world' : 'uk';
-    const url = `https://${host}.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=30&fields=${OFF_FIELDS}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(res.status === 429 ? 'Too many searches – wait a minute and try again.' : 'Search failed');
+  async function offProduct(code) {
+    if (code in productCache) return productCache[code];
+    const res = await timeoutFetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=${OFF_FIELDS}`, 10000);
+    if (res.status === 404) return (productCache[code] = null);
+    if (!res.ok) throw new Error('Lookup failed');
+    const d = await res.json();
+    return (productCache[code] = d.status === 1 && d.product ? fromOFF({ code, ...d.product }) : null);
+  }
+  // fast name search → [{code, name, brand}]
+  async function offFind(q, world) {
+    const clean = q.replace(/[:"()[\]{}^~*?\\/+!&|<>=-]/g, ' ').replace(/\s+/g, ' ').trim();
+    const query = clean + (world ? '' : ' countries:"en:united-kingdom"');
+    const res = await timeoutFetch(`https://search.openfoodfacts.org/search?q=${encodeURIComponent(query)}&page_size=20&langs=en&fields=code,product_name,product_name_en,brands`, 10000);
+    if (!res.ok) throw new Error('search ' + res.status);
+    const d = await res.json();
+    if (!Array.isArray(d.hits)) throw new Error('search format');
+    return d.hits.filter((h) => h.code && (h.product_name_en || h.product_name))
+      .map((h) => ({ code: h.code, name: (h.product_name_en || h.product_name).trim(), brand: prettyBrand(h.brands) }));
+  }
+  // old full-text search (includes nutrition) – fallback only
+  async function offLegacy(q, world) {
+    const res = await timeoutFetch(`https://${world ? 'world' : 'uk'}.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=24&fields=${OFF_FIELDS}`, 15000);
+    if (!res.ok) throw new Error('legacy ' + res.status);
     const d = await res.json();
     return (d.products || []).map(fromOFF).filter(Boolean);
   }
-  async function offBarcode(code) {
-    const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=${OFF_FIELDS}`);
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error('Lookup failed');
-    const d = await res.json();
-    return d.status === 1 && d.product ? fromOFF({ code, ...d.product }) : null;
-  }
+  async function offBarcode(code) { return offProduct(code); }
+
+  const renderResults = (seq) => { if (seq !== add.seq) return; const box = $('#foodResults'); if (box) box.innerHTML = resultsHtml(); };
   HOOKS.submit.foodSearch = async (form, fd) => {
     const q = (fd.q || '').trim();
     if (!q) return;
     add.q = q;
-    // instant local matches first
+    const seq = add.seq = (add.seq || 0) + 1;
+    const world = S().settings.foodRegion === 'world';
+    // your own and previously used foods match instantly
     const words = q.toLowerCase().split(/\s+/);
-    const local = S().foods.filter((f) => words.every((w) => `${f.name} ${f.brand || ''}`.toLowerCase().includes(w)));
+    const local = S().foods.filter((f) => words.every((w) => `${f.name} ${f.brand || ''}`.toLowerCase().includes(w)))
+      .map((f) => ({ code: f.barcode || f.id, name: f.name, brand: f.brand, food: f, state: 'ok' }));
     add.loading = true; add.err = ''; add.results = null;
-    $('#foodResults').innerHTML = resultsHtml();
+    renderResults(seq);
+    if (navigator.onLine === false) {
+      add.loading = false; add.results = local;
+      add.err = 'You’re offline. Search needs a connection; your saved foods are under “Mine”.';
+      renderResults(seq); return;
+    }
+    let hits = null;
     try {
-      const remote = navigator.onLine === false ? [] : await offSearch(q);
-      const seen = new Set(local.map((f) => f.id));
-      add.results = local.concat(remote.filter((f) => !seen.has(f.id)));
-      if (navigator.onLine === false && !local.length) add.err = 'You’re offline. Search needs a connection; your saved foods are under “Mine”.';
+      hits = await offFind(q, world);
+      if (!hits.length && !world) hits = await offFind(q, true); // nothing UK-specific: widen automatically
+    } catch (e) { hits = null; }
+    if (seq !== add.seq) return;
+    if (hits) {
+      const seen = new Set(local.map((r) => r.code));
+      add.results = local.concat(hits.filter((h) => !seen.has(h.code)).map((h) => ({ ...h, food: null, state: 'loading' })));
+      add.loading = false;
+      renderResults(seq);
+      // fetch nutrition, 5 at a time, updating the list as each arrives
+      const queue = add.results.filter((r) => r.state === 'loading');
+      let failed = 0;
+      const worker = async () => {
+        while (queue.length) {
+          const r = queue.shift();
+          try { const f = await offProduct(r.code); r.food = f; r.state = f ? 'ok' : 'none'; if (f) { r.name = f.name; r.brand = f.brand || r.brand; } }
+          catch (e) { r.state = 'none'; failed++; }
+          renderResults(seq);
+        }
+      };
+      await Promise.all([1, 2, 3, 4, 5].map(worker));
+      if (seq !== add.seq) return;
+      // products with missing macros go below complete ones
+      add.results = add.results.filter((r) => !(r.food && r.food.incomplete)).concat(add.results.filter((r) => r.food && r.food.incomplete));
+      if (failed && !add.results.some((r) => r.state === 'ok')) add.err = 'The food database is busy right now. Try again in a moment.';
+      renderResults(seq);
+      return;
+    }
+    // fast search unavailable – try the old search
+    try {
+      const foods = await offLegacy(q, world);
+      if (seq !== add.seq) return;
+      const seen = new Set(local.map((r) => r.code));
+      add.results = local.concat(foods.filter((f) => !seen.has(f.barcode)).map((f) => ({ code: f.barcode, name: f.name, brand: f.brand, food: f, state: 'ok' })));
     } catch (e) {
+      if (seq !== add.seq) return;
       add.results = local;
-      if (!local.length) add.err = e.message === 'Search failed' || e instanceof TypeError ? 'Couldn’t reach the food database. Check your connection, or create the food under “Mine”.' : e.message;
+      add.err = 'Couldn’t reach the food database (it may be busy). Try again in a moment, scan the barcode, or create the food under “Mine”.';
     }
     add.loading = false;
-    const box = $('#foodResults'); if (box) box.innerHTML = resultsHtml();
+    renderResults(seq);
   };
   const $ = (s) => document.querySelector(s);
   async function lookupBarcode(code) {
@@ -367,7 +445,7 @@
   new MutationObserver(() => { if ($('#modal').hidden || !$('#scanVideo')) stopScan(); }).observe(document.getElementById('modal'), { attributes: true, childList: true });
 
   // ---------- picking + amount ----------
-  A.pickResult = (el) => amountSheet(add.results[+el.dataset.i]);
+  A.pickResult = (el) => { const r = add.results[+el.dataset.i]; if (r && r.food) amountSheet(r.food); };
   A.pickFood = (el) => amountSheet(S().foods.find((f) => f.id === el.dataset.id));
   A.pickRecipe = (el) => amountSheet(S().recipes.find((r) => r.id === el.dataset.id), true);
   A.pickMeal = (el) => {
@@ -381,7 +459,7 @@
     const hasServing = isRecipe || food.servingG;
     const unit0 = isRecipe ? 'serving' : food.servingG ? 'serving' : 'g';
     pending = { food, isRecipe, qtyUnit: unit0, qty: unit0 === 'serving' ? 1 : 100 };
-    F.showModal(`<div class="row between"><h2>${esc(food.name)}</h2><button class="btn small" data-a="backAdd">Back</button></div>
+    F.showModal(`${F.sheetHead(esc(food.name), { back: 'backAdd', close: 'closeAdd' })}
       ${food.brand ? `<div class="muted small">${esc(food.brand)}</div>` : ''}
       <div class="row gap nowrap amount">
         <input id="amtQty" data-f="amt" inputmode="decimal" value="${pending.qty}">

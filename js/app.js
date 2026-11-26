@@ -707,7 +707,7 @@
   function openPicker(ctx) {
     pick = { ctx, q: '', cat: '' };
     showModal(`
-      <div class="row between"><h2>${ctx.mode === 'swap' ? 'Swap exercise' : 'Add exercise'}</h2><button class="btn small primary" data-a="closeModal">Done</button></div>
+      ${sheetHead(ctx.mode === 'swap' ? 'Swap exercise' : 'Add exercise')}
       <input class="search" type="search" data-f="pickq" placeholder="Search exercises…">
       <div class="chips" id="pickChips">${pickChips()}</div>
       <div id="pickList" class="pick-list">${pickList()}</div>
@@ -1212,11 +1212,14 @@
     setTimeout(() => { if (!reloading) location.reload(); }, 3000);
   };
 
+  // consistent bottom-sheet header: optional back chevron, title, round close button
+  const sheetHead = (title, o = {}) => `<div class="sheet-head">${o.back ? `<button class="sh-btn" data-a="${o.back}" aria-label="Back">${ICON.back}</button>` : ''}<h2>${title}</h2><button class="sh-btn" data-a="${o.close || 'closeModal'}" aria-label="Close">${ICON.x}</button></div>`;
+
   // ================= public API for feature modules =================
   Object.assign(Forge, {
     get S() { return S; }, save, render, go, route, toast, esc, uid, num, unit, W, fmtDate, fmtDateLong,
     exById, exAll, historyFor, working, isWarm, volume, fmtSet, fmtSets, showModal, closeModal, startWorkout,
-    getPlan, getDay, defaultCfg, beep, buzz, updateWakeLock, ICON, VIEWS, A, HOOKS, C, T,
+    getPlan, getDay, defaultCfg, sheetHead, beep, buzz, updateWakeLock, ICON, VIEWS, A, HOOKS, C, T,
   });
   Forge.boot = () => {
     // bring an older cached page shell up to date (new tabs, update banner)

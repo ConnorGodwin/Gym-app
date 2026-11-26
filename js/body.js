@@ -145,7 +145,7 @@
   };
   A.photoView = async (el) => {
     const p = S().photos.find((x) => x.id === el.dataset.id);
-    F.showModal(`<div class="row between"><h2>${F.fmtDate(F.fromKey(p.date), { day: 'numeric', month: 'short', year: 'numeric' })}${p.pose ? ' · ' + esc(p.pose) : ''}</h2><button class="btn small" data-a="closeModal">Close</button></div>
+    F.showModal(`${F.sheetHead(F.fmtDate(F.fromKey(p.date), { day: 'numeric', month: 'short', year: 'numeric' }) + (p.pose ? ' · ' + esc(p.pose) : ''))}
       <img class="pfull" data-photo="${p.id}" alt="Progress photo">
       <button class="btn block danger-ghost" data-a="photoDel" data-id="${p.id}">Delete photo</button>`);
     loadThumbs();
@@ -159,7 +159,7 @@
   A.photoCompare = () => {
     cmp = [];
     const photos = S().photos.slice().sort((a, b) => a.date.localeCompare(b.date));
-    F.showModal(`<div class="row between"><h2>Pick two photos</h2><button class="btn small" data-a="closeModal">Close</button></div>
+    F.showModal(`${F.sheetHead('Pick two photos')}
       <div class="pgrid">${photos.map((p) => `<button class="pthumb" data-a="cmpPick" data-id="${p.id}"><img data-photo="${p.id}" alt=""><span>${F.fmtDate(F.fromKey(p.date))}${p.pose ? ' · ' + esc(p.pose) : ''}</span></button>`).join('')}</div>`);
     loadThumbs();
   };
@@ -169,7 +169,7 @@
     if (cmp.length < 2) return;
     const [a, b] = cmp.map((id) => S().photos.find((p) => p.id === id)).sort((x, y) => x.date.localeCompare(y.date));
     const days = Math.round((F.fromKey(b.date) - F.fromKey(a.date)) / F.DAY);
-    F.showModal(`<div class="row between"><h2>${days} days apart</h2><button class="btn small" data-a="closeModal">Close</button></div>
+    F.showModal(`${F.sheetHead(`${days} days apart`)}
       <div class="cmp"><figure><img data-photo="${a.id}" alt=""><figcaption>${F.fmtDate(F.fromKey(a.date))}</figcaption></figure><figure><img data-photo="${b.id}" alt=""><figcaption>${F.fmtDate(F.fromKey(b.date))}</figcaption></figure></div>`);
     loadThumbs();
   };
