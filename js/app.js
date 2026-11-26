@@ -1,35 +1,32 @@
 /* Forge – workout tracker. Vanilla JS, data stored on-device in localStorage. */
 (function () {
   'use strict';
+  // Compatibility: an older installed version (v7) can serve its cached index.html, which only loads
+  // exercises/templates/progression/app.js. If that happens, load the rest of this release ourselves.
+  if (!window.Store) {
+    const files = ['js/store.js', 'js/howto.js', 'js/app.js', 'js/training.js', 'js/nutrition.js', 'js/body.js', 'js/progress.js', 'js/main.js'];
+    (function next(i) {
+      if (i >= files.length) return;
+      const el = document.createElement('script');
+      el.src = files[i]; el.onload = el.onerror = () => next(i + 1);
+      document.body.appendChild(el);
+    })(0);
+    return;
+  }
   const C = window.Core;
   const MAX = C.MAX_SETS;
-  const STORE = 'forge.v1';
-  const DEFAULTS = () => ({
-    v: 1,
-    settings: { unit: 'kg', rest: 90, autoRest: true, sound: true, vibrate: true, theme: 'system', accent: 'lime' },
-    custom: [], plans: [], sessions: [], active: null,
-  });
+  const Forge = window.Forge = window.Forge || {};
+  const DEFAULTS = Store.DEFAULTS;
+  const normalise = Store.normalise;
 
   // ================= state =================
-  let S = load();
-  function load() {
-    try {
-      const d = JSON.parse(localStorage.getItem(STORE));
-      if (d && typeof d === 'object') return normalise(d);
-    } catch (e) { /* fall through */ }
-    return DEFAULTS();
-  }
-  function normalise(d) {
-    const base = DEFAULTS();
-    const out = { ...base, ...d, settings: { ...base.settings, ...(d.settings || {}) } };
-    ['custom', 'plans', 'sessions'].forEach((k) => { if (!Array.isArray(out[k])) out[k] = []; });
-    out.sessions.sort((a, b) => b.start - a.start);
-    return out;
-  }
+  let S = Store.load();
   function save() {
-    try { localStorage.setItem(STORE, JSON.stringify(S)); }
+    try { Store.save(S); }
     catch (e) { toast('Could not save – device storage may be full'); }
   }
+  // extension points used by the feature modules (nutrition, body, progress, training extras)
+  const HOOKS = { input: {}, change: {}, submit: {}, trainTop: [], planExtras: [], exerciseExtras: [], settingsExtras: [], afterFinish: [], afterSave: [], tick: [] };
 
   // ================= utils =================
   const $ = (sel, el = document) => el.querySelector(sel);
@@ -53,13 +50,17 @@
 
   // Past performances of an exercise, newest first. `occ` matches the n-th time the exercise
   // appears within a workout (e.g. the 8 runs in a HYROX simulation).
-  function historyFor(exId, occ = 0) {
+  // Warm-up sets are ignored, and deload-week sessions are skipped so suggestions build on normal weeks.
+  const isWarm = (s) => s && s.type === 'w';
+  const working = (sets) => (sets || []).filter((s) => !isWarm(s));
+  function historyFor(exId, occ = 0, includeDeload) {
     const out = [];
     for (const s of S.sessions) {
-      const entries = s.exercises.filter((e) => e.ex === exId && e.sets.length);
+      if (s.deload && !includeDeload) continue;
+      const entries = s.exercises.filter((e) => e.ex === exId && working(e.sets).length);
       if (!entries.length) continue;
       const e = entries[Math.min(occ, entries.length - 1)];
-      out.push({ date: s.start, sessionId: s.id, sets: e.sets });
+      out.push({ date: s.start, sessionId: s.id, sets: working(e.sets), deload: !!s.deload });
     }
     return out;
   }
@@ -87,7 +88,7 @@
     if (strs.every((x) => x === strs[0])) return sets.length > 1 ? `${sets.length} × ${strs[0]}` : strs[0];
     return strs.join(' · ');
   }
-  const volume = (ex, sets) => (ex.type === 'strength' ? sets.reduce((a, s) => a + (+s.weight || 0) * (+s.reps || 0), 0) : 0);
+  const volume = (ex, sets) => (ex.type === 'strength' ? working(sets).reduce((a, s) => a + (+s.weight || 0) * (+s.reps || 0), 0) : 0);
 
   // ================= routing / render =================
   function route() {
@@ -96,7 +97,8 @@
     return { name, arg: arg ? decodeURIComponent(arg) : null };
   }
   const go = (h) => { if (location.hash === '#/' + h) render(); else location.hash = '#/' + h; };
-  window.addEventListener('hashchange', () => render());
+  // leaving a screen (including the Android back button) closes any open sheet
+  window.addEventListener('hashchange', () => { if (!$('#modal').hidden) closeModal(); render(); });
 
   function render(keepScroll) {
     const r = route();
@@ -108,7 +110,8 @@
     window.scrollTo(0, keepScroll ? y : 0);
     tick();
   }
-  const tabOf = (n) => ({ workout: 'train', plan: 'plans', exercise: 'library', session: 'history', settings: 'history' }[n] || n);
+  const tabOf = (n) => ({ workout: 'train', settings: 'train', plan: 'plans', library: 'plans', exercise: 'plans', session: 'progress', history: 'progress', body: 'progress', records: 'progress',
+    food: 'food', foodsearch: 'food', targets: 'food', mealplan: 'food', shopping: 'food', recipe: 'food', myfoods: 'food' }[n] || n);
 
   // ================= views =================
   const VIEWS = {};
@@ -139,6 +142,7 @@
         <div><b>${km.toFixed(1)}</b><span>km cardio</span></div>
         <div><b>${Math.round(secs / 60)}</b><span>minutes</span></div>
       </div>
+      ${HOOKS.trainTop.map((f) => f()).join('')}
       ${a ? '' : `<button class="btn block" data-a="startEmpty">＋ Start empty workout</button>`}
       <h2>Your plans</h2>
       ${S.plans.length ? S.plans.map((p) => `
@@ -168,6 +172,7 @@
         <button class="btn small danger-ghost" data-a="cancelWorkout">Discard</button>
         <button class="btn small primary" data-a="finishWorkout">Finish</button>
       </header>
+      ${a.deload ? `<div class="card deload-banner"><b>Deload week</b><div class="small muted">Lighter weights and one set fewer to recover. Your normal progression resumes next week.</div></div>` : ''}
       ${a.exercises.map((e, i) => { occ[e.ex] = (occ[e.ex] || 0) + 1; return exCard(e, i, occ[e.ex] - 1); }).join('')}
       <button class="btn block" data-a="addExercise">＋ Add exercise</button>
     `;
@@ -181,8 +186,12 @@
     const label = (f) => ({ weight: (ex.type === 'bodyweight' || ex.type === 'timed') ? '+' + unit() : unit(), reps: 'Reps', time: 'Time', distance: ex.dist || 'm' }[f]);
     const isCardio = ex.type === 'cardio';
     const sg = e.sugg;
+    const ss = supersetInfo(i);
+    const nWork = working(e.sets).length;
+    const plateable = ['Barbell', 'Smith Machine', 'Trap Bar'].includes(ex.equipment) && ex.type === 'strength';
     return `
-      <div class="card ex-card" id="ex-${i}">
+      <div class="card ex-card ${ss ? 'ss' : ''} ${ss && ss.first ? 'ss-first' : ''} ${ss && ss.last ? 'ss-last' : ''}" id="ex-${i}">
+        ${ss ? `<div class="ss-tag">Superset ${ss.letter}${ss.pos}</div>` : ''}
         <div class="row between">
           <a class="ex-name" href="#/exercise/${encodeURIComponent(ex.id)}">${esc(ex.name)}</a>
           <button class="icon-btn" data-a="exMenu" data-e="${i}" aria-label="Exercise options">${ICON.dots}</button>
@@ -199,8 +208,8 @@
           <tbody>
           ${e.sets.map((s, j) => `
             <tr class="${s.done ? 'done' : ''}">
-              <td class="n">${j + 1}</td>
-              <td class="prev">${last && last.sets[j] ? esc(fmtSet(ex, last.sets[j], true)) : '–'}</td>
+              <td class="n"><button class="setno t-${s.type || 'n'}" data-a="setMenu" data-e="${i}" data-s="${j}" aria-label="Set ${j + 1} type and effort">${setLabel(e.sets, j)}${s.rpe ? `<small>@${s.rpe}</small>` : ''}</button></td>
+              <td class="prev">${isWarm(s) ? '' : (() => { const k = workIndex(e.sets, j); return last && last.sets[k] ? esc(fmtSet(ex, last.sets[k], true)) : '–'; })()}</td>
               ${fields.map((f) => `<td>${setInput(i, j, f, s[f], ex)}</td>`).join('')}
               ${isCardio ? `<td class="prev" id="pace-${i}-${j}">${esc(C.pace(ex, s.distance, s.time))}</td>` : ''}
               <td><button class="check ${s.done ? 'on' : ''}" data-a="toggleSet" data-e="${i}" data-s="${j}" aria-label="Mark set ${j + 1} done">✓</button></td>
@@ -208,10 +217,14 @@
           </tbody>
         </table>
         <div class="row gap">
-          <button class="btn small" data-a="addSet" data-e="${i}" ${e.sets.length >= MAX ? 'disabled' : ''}>＋ Set</button>
+          <button class="btn small" data-a="addSet" data-e="${i}" ${nWork >= MAX ? 'disabled' : ''}>＋ Set</button>
           <button class="btn small" data-a="delSet" data-e="${i}" ${e.sets.length <= 1 ? 'disabled' : ''}>− Set</button>
-          <span class="muted small grow right">${e.sets.length}/${MAX} sets</span>
+          <span class="muted small grow right">${nWork}/${MAX} sets</span>
         </div>
+        ${ex.type === 'strength' ? `<div class="row gap tools">
+          ${e.sets.some(isWarm) ? '' : `<button class="chip" data-a="warmups" data-e="${i}">＋ Warm-up sets</button>`}
+          ${plateable ? `<button class="chip" data-a="plates" data-e="${i}">Plate calculator</button>` : ''}
+        </div>` : ''}
         <textarea class="notes" data-f="exnote" data-e="${i}" placeholder="Notes" rows="1">${esc(e.notes || '')}</textarea>
       </div>`;
   }
@@ -223,6 +236,27 @@
     if (f === 'time') return `<input ${at} inputmode="decimal" value="${v == null ? '' : C.fmtTime(v)}" placeholder="m:ss">`;
     if (f === 'distance') return `<input ${at} inputmode="decimal" value="${v == null ? '' : v}" placeholder="${ex.dist || 'm'}">`;
     return '';
+  }
+
+  // set numbering: warm-ups show "W", working sets are numbered 1..n
+  function workIndex(sets, j) { let k = 0; for (let x = 0; x < j; x++) if (!isWarm(sets[x])) k++; return k; }
+  function setLabel(sets, j) {
+    const s = sets[j];
+    if (isWarm(s)) return 'W';
+    const n = workIndex(sets, j) + 1;
+    return s.type === 'd' ? `${n}D` : s.type === 'f' ? `${n}F` : String(n);
+  }
+  // consecutive exercises sharing an `ss` id form a superset
+  function supersetInfo(i) {
+    const ex = S.active.exercises, g = ex[i].ss;
+    if (!g) return null;
+    let a = i, b = i;
+    while (a > 0 && ex[a - 1].ss === g) a--;
+    while (b < ex.length - 1 && ex[b + 1].ss === g) b++;
+    if (a === b) return null;
+    let letter = 0, k = 0;
+    while (k < a) { const g2 = ex[k].ss; let e2 = k; while (g2 && e2 < ex.length - 1 && ex[e2 + 1].ss === g2) e2++; if (g2 && e2 > k) letter++; k = e2 + 1; }
+    return { letter: String.fromCharCode(65 + letter), pos: i - a + 1, first: i === a, last: i === b, start: a, end: b };
   }
 
   function parseField(k, v) {
@@ -237,7 +271,7 @@
 
   // ---------- Plans ----------
   VIEWS.plans = () => `
-    <header class="top"><h1>Plans</h1></header>
+    <header class="top"><h1>Plans</h1><a class="btn small" href="#/library">Exercise library</a></header>
     <button class="btn block primary" data-a="newPlan">＋ New blank plan</button>
     ${S.plans.map((p) => `
       <a class="card list-item" href="#/plan/${p.id}">
@@ -273,6 +307,7 @@
           </div>
         </div>`).join('')}
       <button class="btn block" data-a="addDay" data-p="${p.id}">＋ Add day</button>
+      ${HOOKS.planExtras.map((f) => f(p)).join('')}
       <div class="row gap">
         <button class="btn grow" data-a="dupPlan" data-p="${p.id}">Duplicate plan</button>
         <button class="btn grow danger-ghost" data-a="delPlan" data-p="${p.id}">Delete plan</button>
@@ -298,7 +333,7 @@
       default: fields = [setsSel, reps, wt('Start weight'), rest];
     }
     return `
-      <div class="plan-ex">
+      <div class="plan-ex ${c.ss && ((d.exercises[ci - 1] || {}).ss === c.ss || (d.exercises[ci + 1] || {}).ss === c.ss) ? 'in-ss' : ''}">
         <div class="row between">
           <div><b>${esc(ex.name)}</b> <span class="muted small">${esc(ex.equipment)}</span></div>
           <div class="row">
@@ -308,13 +343,14 @@
           </div>
         </div>
         <div class="cfg">${fields.join('')}</div>
+        ${ci < d.exercises.length - 1 ? `<button class="link-btn ${c.ss && c.ss === d.exercises[ci + 1].ss ? 'on' : ''}" data-a="planSS" data-p="${p.id}" data-d="${d.id}" data-c="${c.id}">${c.ss && c.ss === d.exercises[ci + 1].ss ? '⛓ Superset with next · tap to unlink' : '⛓ Superset with next'}</button>` : ''}
       </div>`;
   }
 
   // ---------- Library ----------
   let libQ = '', libCat = '';
   VIEWS.library = () => `
-    <header class="top"><h1>Exercises</h1><button class="btn small" data-a="newCustom">＋ Custom</button></header>
+    <header class="top"><a class="icon-btn" href="#/plans" aria-label="Back">${ICON.back}</a><h1>Exercises</h1><button class="btn small" data-a="newCustom">＋ Custom</button></header>
     <input class="search" type="search" data-f="libq" placeholder="Search ${exAll().length} exercises…" value="${esc(libQ)}">
     <div class="chips">${['', ...window.EX_CATEGORIES, ...(S.custom.length ? ['Custom'] : [])].map((c) => `<button class="chip ${libCat === c ? 'on' : ''}" data-a="libCat" data-c="${esc(c)}">${c || 'All'}</button>`).join('')}</div>
     <div id="libList">${libList()}</div>`;
@@ -357,7 +393,8 @@
       ${hist.length > 1 ? chart(ex, hist) : ''}
       <div class="sugg k-${sg.kind}"><div><b>Next session:</b> ${esc(fmtSets(ex, sg.sets) || '-')}</div><div class="small">${esc(sg.reason)}</div></div>
       <h2>History</h2>
-      ${hist.length ? hist.map((h) => `<a class="list-item plain" href="#/session/${h.sessionId}"><div><div>${fmtDateLong(h.date)}</div><div class="small">${h.sets.map((s, i) => `<span class="setpill">${i + 1}: ${esc(fmtSet(ex, s))}${ex.type === 'cardio' && s.distance && s.time ? ` (${esc(C.pace(ex, s.distance, s.time))})` : ''}</span>`).join(' ')}</div></div></a>`).join('') : '<p class="muted">Not done yet.</p>'}
+      ${hist.length ? hist.map((h) => `<a class="list-item plain" href="#/session/${h.sessionId}"><div><div>${fmtDateLong(h.date)}</div><div class="small">${h.sets.map((s, i) => `<span class="setpill">${setLabel(h.sets, i)}: ${esc(fmtSet(ex, s))}${s.rpe ? ` @${s.rpe}` : ''}${ex.type === 'cardio' && s.distance && s.time ? ` (${esc(C.pace(ex, s.distance, s.time))})` : ''}</span>`).join(' ')}</div></div></a>`).join('') : '<p class="muted">Not done yet.</p>'}
+      ${HOOKS.exerciseExtras.map((f) => f(ex)).join('')}
       ${ex.custom ? `<button class="btn block danger-ghost" data-a="delCustom" data-id="${esc(ex.id)}">Delete custom exercise</button>` : ''}`;
   };
 
@@ -391,7 +428,8 @@
 
   // ---------- History ----------
   VIEWS.history = () => `
-    <header class="top"><h1>History</h1><a class="icon-btn" href="#/settings" aria-label="Settings">${ICON.gear}</a></header>
+    <header class="top"><h1>Progress</h1><a class="icon-btn" href="#/settings" aria-label="Settings">${ICON.gear}</a></header>
+    ${Forge.progressTabs ? Forge.progressTabs('history') : ''}
     ${S.sessions.length ? S.sessions.map((s) => {
       const vol = s.exercises.reduce((a, e) => a + volume(exById(e.ex), e.sets), 0);
       return `<a class="card list-item" href="#/session/${s.id}"><div><h3>${esc(s.name)}</h3>
@@ -402,12 +440,12 @@
     const s = S.sessions.find((x) => x.id === id);
     if (!s) return `<header class="top"><h1>Not found</h1></header>`;
     return `
-      <header class="top"><a class="icon-btn" href="#/history" aria-label="Back">${ICON.back}</a><h1 class="grow">${esc(s.name)}</h1></header>
+      <header class="top"><a class="icon-btn" href="#/history" aria-label="Back">${ICON.back}</a><h1 class="grow">${esc(s.name)}${s.deload ? ' <span class="tag">Deload</span>' : ''}</h1></header>
       <div class="muted">${fmtDateLong(s.start)} · ${C.fmtTime((s.end - s.start) / 1000)}</div>
       ${(s.prs && s.prs.length) ? `<div class="card pr">🏆 New best: ${s.prs.map((p) => esc(exById(p).name)).join(', ')}</div>` : ''}
       ${s.exercises.map((e) => { const ex = exById(e.ex); return `
         <div class="card"><a class="ex-name" href="#/exercise/${encodeURIComponent(ex.id)}">${esc(ex.name)}</a>
-          <div class="small">${e.sets.map((x, i) => `<span class="setpill">${i + 1}: ${esc(fmtSet(ex, x))}${ex.type === 'cardio' && x.distance && x.time ? ` (${esc(C.pace(ex, x.distance, x.time))})` : ''}</span>`).join(' ')}</div>
+          <div class="small">${e.sets.map((x, i) => `<span class="setpill ${isWarm(x) ? 'warm' : ''}">${setLabel(e.sets, i)}: ${esc(fmtSet(ex, x))}${x.rpe ? ` @${x.rpe}` : ''}${ex.type === 'cardio' && x.distance && x.time ? ` (${esc(C.pace(ex, x.distance, x.time))})` : ''}</span>`).join(' ')}</div>
           ${e.notes ? `<div class="muted small">${esc(e.notes)}</div>` : ''}</div>`; }).join('')}
       <div class="row gap"><button class="btn grow primary" data-a="repeatSession" data-id="${s.id}" ${S.active ? 'disabled' : ''}>Repeat workout</button><button class="btn grow danger-ghost" data-a="delSession" data-id="${s.id}">Delete</button></div>`;
   };
@@ -433,8 +471,9 @@
         ${tog('sound', 'Timer sounds')}
         ${tog('vibrate', 'Vibrate')}
       </div>
+      ${HOOKS.settingsExtras.map((f) => f()).join('')}
       <h2>Your data</h2>
-      <p class="muted small">Everything is stored on this device only. Export a backup regularly, or to move to another phone.</p>
+      <p class="muted small">Everything is stored on this device only. Export a backup regularly, or to move to another phone. Progress photos stay on the device and aren't included in backups.</p>
       <div class="card">
         <button class="btn block" data-a="export">Export backup (.json)</button>
         <label class="btn block">Import backup<input type="file" accept="application/json,.json" data-f="import" hidden></label>
@@ -456,7 +495,7 @@
     iv: { work: 20, rest: 10, rounds: 8, prep: 10, running: false, phase: 'ready', round: 0, end: 0, remain: 0, beeped: null },
   };
   VIEWS.timer = () => {
-    const tabs = `<div class="seg wide">${[['stopwatch', 'Stopwatch'], ['countdown', 'Countdown'], ['interval', 'Intervals']].map(([m, l]) => `<button class="${T.mode === m ? 'on' : ''}" data-a="tmode" data-m="${m}">${l}</button>`).join('')}</div>`;
+    const tabs = `<div class="seg wide">${[['stopwatch', 'Stopwatch'], ['countdown', 'Countdown'], ['interval', 'Intervals'], ['hyrox', 'HYROX']].map(([m, l]) => `<button class="${T.mode === m ? 'on' : ''}" data-a="tmode" data-m="${m}">${l}</button>`).join('')}</div>`;
     let body = '';
     if (T.mode === 'stopwatch') {
       body = `<div class="clock" data-tick="sw">0:00.0</div>
@@ -467,6 +506,8 @@
         <div class="chips center">${[30, 60, 90, 120, 180, 300, 600].map((s) => `<button class="chip" data-a="cdSet" data-s="${s}">${C.fmtTime(s)}</button>`).join('')}</div>
         <label class="toggle"><span>Custom (m:ss)</span><input class="short" data-f="cdCustom" inputmode="decimal" value="${C.fmtTime(T.cd.dur)}"></label>
         <div class="row gap center"><button class="btn big primary" data-a="cdToggle">${T.cd.running ? 'Pause' : 'Start'}</button><button class="btn big" data-a="cdAdd">+15s</button><button class="btn big" data-a="cdReset">Reset</button></div>`;
+    } else if (T.mode === 'hyrox') {
+      body = Forge.hyroxBody ? Forge.hyroxBody() : '';
     } else {
       const iv = T.iv;
       body = `<div class="phase" data-tick="ivPhase"></div><div class="clock" data-tick="iv"></div><div class="center muted" data-tick="ivRound"></div>
@@ -540,6 +581,7 @@
     set('ivRound', iv.phase === 'ready' ? `${iv.rounds} rounds` : `Round ${Math.max(1, iv.round)} / ${iv.rounds}`);
     const ph = document.querySelector('[data-tick="ivPhase"]');
     if (ph) ph.className = `phase ph-${iv.phase}`;
+    HOOKS.tick.forEach((f) => f(now, set));
   }
   setInterval(tick, 200);
 
@@ -579,7 +621,7 @@
   const buzz = (p) => { if (S.settings.vibrate && navigator.vibrate) try { navigator.vibrate(p); } catch (e) { /* ignore */ } };
   let wake = null;
   async function updateWakeLock() {
-    const want = !!S.active || T.sw.running || T.cd.running || T.iv.running;
+    const want = !!S.active || T.sw.running || T.cd.running || T.iv.running || !!(S.race && S.race.start && !S.race.done);
     try {
       if (want && !wake && 'wakeLock' in navigator && document.visibilityState === 'visible') {
         wake = await navigator.wakeLock.request('screen');
@@ -590,11 +632,12 @@
   document.addEventListener('visibilitychange', updateWakeLock);
 
   // ================= workout actions =================
-  function buildExercise(cfg, occ) {
+  function buildExercise(cfg, occ, deload) {
     const ex = exById(cfg.ex);
-    const sg = C.suggest(ex, historyFor(cfg.ex, occ), cfg, unit());
+    let sg = C.suggest(ex, historyFor(cfg.ex, occ), cfg, unit());
+    if (deload) sg = C.deload(ex, sg, unit());
     return {
-      ex: cfg.ex,
+      ex: cfg.ex, ss: cfg.ss || null,
       cfg: { sets: cfg.sets, repMin: cfg.repMin, repMax: cfg.repMax, weight: cfg.weight, time: cfg.time, distance: cfg.distance, rest: cfg.rest != null ? cfg.rest : S.settings.rest },
       sugg: { kind: sg.kind, reason: sg.reason, sets: sg.sets },
       sets: sg.sets.map((s) => ({ ...s, done: false })),
@@ -603,9 +646,11 @@
   }
   function startWorkout(name, cfgs, planId, dayId) {
     const occ = {};
+    const plan = planId && getPlan(planId);
+    const deload = !!(plan && Forge.isDeloadWeek && Forge.isDeloadWeek(plan));
     S.active = {
-      id: uid(), name, planId: planId || null, dayId: dayId || null, start: Date.now(), rest: null,
-      exercises: cfgs.map((c) => { occ[c.ex] = (occ[c.ex] || 0) + 1; return buildExercise(c, occ[c.ex] - 1); }),
+      id: uid(), name, planId: planId || null, dayId: dayId || null, start: Date.now(), rest: null, deload,
+      exercises: cfgs.map((c) => { occ[c.ex] = (occ[c.ex] || 0) + 1; return buildExercise(c, occ[c.ex] - 1, deload); }),
     };
     save(); updateWakeLock(); go('workout');
   }
@@ -617,8 +662,13 @@
   function finishWorkout() {
     const a = S.active;
     const exercises = a.exercises.map((e) => ({
-      ex: e.ex, notes: e.notes || '',
-      sets: e.sets.filter((s) => s.done).map((s) => { const o = {}; fieldsOf(exById(e.ex)).forEach((f) => { if (s[f] != null) o[f] = s[f]; }); return o; }),
+      ex: e.ex, notes: e.notes || '', ...(e.ss ? { ss: e.ss } : {}),
+      sets: e.sets.filter((s) => s.done).map((s) => {
+        const o = {}; fieldsOf(exById(e.ex)).forEach((f) => { if (s[f] != null) o[f] = s[f]; });
+        if (s.type && s.type !== 'n') o.type = s.type;
+        if (s.rpe) o.rpe = s.rpe;
+        return o;
+      }),
     })).filter((e) => e.sets.length);
     if (!exercises.length) {
       if (!confirm('No sets are ticked as done. Discard this workout?')) return;
@@ -630,11 +680,11 @@
     const prs = [];
     exercises.forEach((e) => {
       const ex = exById(e.ex);
-      const hist = historyFor(e.ex);
-      if (!hist.length) return;
+      const hist = historyFor(e.ex, 0, true);
+      if (!hist.length || !working(e.sets).length) return;
       if (ex.type === 'strength') {
         const best = Math.max(...hist.flatMap((h) => h.sets.map((s) => C.e1rm(+s.weight || 0, +s.reps || 0))));
-        const now = Math.max(...e.sets.map((s) => C.e1rm(+s.weight || 0, +s.reps || 0)));
+        const now = Math.max(...working(e.sets).map((s) => C.e1rm(+s.weight || 0, +s.reps || 0)));
         if (now > best + 0.01) prs.push(e.ex);
       } else if (ex.type === 'cardio') {
         const p = (s) => (s.distance && s.time ? s.time / s.distance : Infinity);
@@ -642,10 +692,11 @@
         if (Math.min(...e.sets.map(p)) < best) prs.push(e.ex);
       }
     });
-    const session = { id: a.id, name: a.name, planId: a.planId, dayId: a.dayId, start: a.start, end: Date.now(), exercises, prs };
+    const session = Store.touch({ id: a.id, name: a.name, planId: a.planId, dayId: a.dayId, start: a.start, end: Date.now(), exercises, prs, ...(a.deload ? { deload: true } : {}) });
     S.sessions.unshift(session);
     S.active = null; save(); updateWakeLock();
     toast(prs.length ? `Saved – ${prs.length} new best${prs.length > 1 ? 's' : ''}! 🏆` : 'Workout saved 💪');
+    HOOKS.afterFinish.forEach((f) => f(session));
     go('session/' + session.id);
   }
 
@@ -715,11 +766,12 @@
   }
 
   // ================= plan helpers =================
-  const getPlan = (id) => S.plans.find((p) => p.id === id);
+  // looking a plan up for editing marks it as changed (updatedAt) for future sync
+  const getPlan = (id) => { const p = S.plans.find((x) => x.id === id); if (p) p.updatedAt = Date.now(); return p; };
   const getDay = (pid, did) => getPlan(pid).days.find((d) => d.id === did);
   const move = (arr, i, dir) => { const j = i + dir; if (j < 0 || j >= arr.length) return; [arr[i], arr[j]] = [arr[j], arr[i]]; };
   function withIds(plan) {
-    return { id: uid(), name: plan.name, days: plan.days.map((d) => ({ id: uid(), name: d.name, exercises: d.exercises.map((c) => ({ ...clone(c), id: uid() })) })) };
+    return { id: uid(), updatedAt: Date.now(), name: plan.name, days: plan.days.map((d) => ({ id: uid(), name: d.name, exercises: d.exercises.map((c) => ({ ...clone(c), id: uid() })) })) };
   }
 
   // ================= events =================
@@ -731,14 +783,23 @@
     const e = S.active.exercises[+el.dataset.e], s = e.sets[+el.dataset.s];
     s.done = !s.done;
     save();
-    if (s.done && S.settings.autoRest) startRest(e.cfg && e.cfg.rest != null ? e.cfg.rest : S.settings.rest);
+    const ss = supersetInfo(+el.dataset.e);
+    if (s.done && ss && !ss.last) {
+      // superset: go straight to the next exercise, rest after the last one
+      const next = S.active.exercises[+el.dataset.e + 1];
+      render(true);
+      toast(`Superset → ${exById(next.ex).name}`);
+      const card = $(`#ex-${+el.dataset.e + 1}`); if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    if (s.done && S.settings.autoRest && !isWarm(s)) startRest(e.cfg && e.cfg.rest != null ? e.cfg.rest : S.settings.rest);
     render(true);
   };
   A.addSet = (el) => {
     const e = S.active.exercises[+el.dataset.e];
-    if (e.sets.length >= MAX) return;
+    if (working(e.sets).length >= MAX) return;
     const last = e.sets[e.sets.length - 1] || {};
-    e.sets.push({ ...last, done: false }); save(); render(true);
+    e.sets.push({ ...last, type: last.type === 'w' ? 'n' : last.type, rpe: null, done: false }); save(); render(true);
   };
   A.delSet = (el) => {
     const e = S.active.exercises[+el.dataset.e];
@@ -748,7 +809,7 @@
     const i = +el.dataset.e, e = S.active.exercises[i];
     const src = el.dataset.mode === 'last' ? (historyFor(e.ex, occurrenceIndex(i))[0] || {}).sets : e.sugg.sets;
     if (!src) return;
-    e.sets = e.sets.map((s, j) => (s.done ? s : { ...(src[Math.min(j, src.length - 1)]), done: false }));
+    e.sets = e.sets.map((s, j) => (s.done || isWarm(s) ? s : { ...(src[Math.min(workIndex(e.sets, j), src.length - 1)]), type: s.type, done: false }));
     save(); render(true);
   };
   A.exMenu = (el) => {
@@ -757,6 +818,7 @@
       <div class="menu">
         <button class="btn block" data-a="exSwap" data-e="${i}">Swap exercise</button>
         <button class="btn block" data-a="exRest" data-e="${i}">Change rest time</button>
+        ${i < n - 1 ? `<button class="btn block" data-a="exSS" data-e="${i}">${S.active.exercises[i].ss && S.active.exercises[i].ss === S.active.exercises[i + 1].ss ? 'Unlink superset with next' : 'Superset with next exercise'}</button>` : ''}
         <button class="btn block" data-a="exMove" data-e="${i}" data-dir="-1" ${i === 0 ? 'disabled' : ''}>Move up</button>
         <button class="btn block" data-a="exMove" data-e="${i}" data-dir="1" ${i === n - 1 ? 'disabled' : ''}>Move down</button>
         <button class="btn block danger-ghost" data-a="exRemove" data-e="${i}">Remove from workout</button>
@@ -779,11 +841,83 @@
   A.restAdj = (el) => { const r = S.active && S.active.rest; if (!r) return; r.end += +el.dataset.v * 1000; r.total = Math.max(1, r.total + +el.dataset.v); save(); tick(); };
   A.restSkip = () => { if (S.active) { S.active.rest = null; save(); renderRestBar(); } };
 
+  // set type + RPE sheet
+  A.setMenu = (el) => {
+    const i = +el.dataset.e, j = +el.dataset.s, s = S.active.exercises[i].sets[j];
+    const types = [['n', 'Normal'], ['w', 'Warm-up'], ['d', 'Drop set'], ['f', 'To failure']];
+    const rpes = [6, 7, 7.5, 8, 8.5, 9, 9.5, 10];
+    showModal(`<h2>Set ${setLabel(S.active.exercises[i].sets, j)}</h2>
+      <div class="label-sm">Set type</div>
+      <div class="seg wide">${types.map(([v, l]) => `<button class="${(s.type || 'n') === v ? 'on' : ''}" data-a="setType" data-e="${i}" data-s="${j}" data-v="${v}">${l}</button>`).join('')}</div>
+      <div class="label-sm">Effort (RPE) <span class="muted">· 10 = nothing left, 8 = 2 reps left</span></div>
+      <div class="chips center">${rpes.map((r) => `<button class="chip ${s.rpe === r ? 'on' : ''}" data-a="setRpe" data-e="${i}" data-s="${j}" data-v="${r}">${r}</button>`).join('')}<button class="chip ${!s.rpe ? 'on' : ''}" data-a="setRpe" data-e="${i}" data-s="${j}" data-v="">None</button></div>
+      <p class="muted small">Warm-up sets don't count towards your sets, records or next-session suggestions. RPE helps the suggestions: very hard sets hold the weight, easy ones jump further.</p>
+      <button class="btn block primary" data-a="closeModal">Done</button>`);
+  };
+  A.setType = (el) => {
+    const e = S.active.exercises[+el.dataset.e], s = e.sets[+el.dataset.s];
+    if (el.dataset.v !== 'w' && isWarm(s) && working(e.sets).length >= MAX) { toast(`Max ${MAX} working sets`); return; }
+    s.type = el.dataset.v; save(); A.setMenu(el); render(true);
+  };
+  A.setRpe = (el) => { const s = S.active.exercises[+el.dataset.e].sets[+el.dataset.s]; s.rpe = el.dataset.v ? +el.dataset.v : null; save(); A.setMenu(el); render(true); };
+  A.warmups = (el) => {
+    const e = S.active.exercises[+el.dataset.e], ex = exById(e.ex);
+    const first = working(e.sets)[0] || {};
+    const w = +first.weight;
+    if (!w) { toast('Enter your working weight first'); return; }
+    const sets = C.warmups(ex, w, unit(), barKg());
+    if (!sets.length) { toast('Weight is light enough to skip warm-ups'); return; }
+    e.sets = sets.map((x) => ({ ...x, type: 'w', done: false })).concat(e.sets);
+    save(); render(true);
+  };
+  const barKg = () => S.settings.barKg || (unit() === 'lb' ? C.fromDisp(45, 'lb') : 20);
+  function platesModal(kg) {
+    const res = C.plates(kg, barKg(), unit());
+    const v = kg == null ? '' : W(kg);
+    showModal(`<h2>Plate calculator</h2>
+      <label class="toggle"><span>Total weight (${unit()})</span><input class="short" data-f="plateW" inputmode="decimal" value="${v}"></label>
+      <div id="plateOut">${platesHtml(res)}</div>
+      <p class="muted small">Bar: ${W(barKg())} ${unit()} · change it in Settings.</p>
+      <button class="btn block primary" data-a="closeModal">Done</button>`);
+  }
+  function platesHtml(res) {
+    if (!res) return '<p class="muted">Enter a weight.</p>';
+    if (res.under) return `<p class="muted">That's less than the bar (${W(barKg())} ${unit()}).</p>`;
+    const colors = { 25: '#d64545', 20: '#3b6fd4', 15: '#e0b12f', 10: '#3f9a4b', 5: '#e8e8e8', 2.5: '#333', 1.25: '#999', 45: '#3b6fd4', 35: '#e0b12f', 0.5: '#bbb' };
+    return `<div class="plate-viz"><span class="bar-end"></span>${res.perSide.map((p) => `<span class="plate" style="--h:${Math.min(100, 28 + p * (unit() === 'lb' ? 1.6 : 3))}%;--c:${colors[p] || 'var(--accent)'}">${p}</span>`).join('')}<span class="bar-sleeve"></span></div>
+      <p class="center"><b>Each side:</b> ${res.perSide.length ? res.perSide.join(' + ') + ' ' + unit() : 'empty bar'}${res.left > 0.01 ? `<br><span class="muted small">${+res.left.toFixed(2)} ${unit()} can't be made with standard plates</span>` : ''}</p>`;
+  }
+  A.plates = (el) => {
+    const e = S.active.exercises[+el.dataset.e];
+    const firstUndone = working(e.sets).find((s) => !s.done) || working(e.sets)[0] || {};
+    platesModal(firstUndone.weight);
+  };
+  A.platesTool = () => platesModal(null);
+  HOOKS.input.plateW = (el) => { const n = num(el.value); $('#plateOut').innerHTML = platesHtml(n == null ? null : C.plates(C.fromDisp(n, unit()), barKg(), unit())); };
+  // supersets
+  function linkSS(list, i) {
+    const a = list[i], b = list[i + 1];
+    if (!b) return;
+    if (a.ss && a.ss === b.ss) {
+      // unlink: split the group after i
+      const g = a.ss, ng = uid();
+      for (let k = i + 1; k < list.length && list[k].ss === g; k++) list[k].ss = ng;
+    } else {
+      const g = a.ss || b.ss || uid();
+      if (b.ss && b.ss !== g) { const old = b.ss; for (let k = i + 1; k < list.length && list[k].ss === old; k++) list[k].ss = g; }
+      a.ss = g; b.ss = g;
+    }
+    // drop ids that no longer join two neighbours
+    list.forEach((x, k) => { if (x.ss && (list[k - 1] || {}).ss !== x.ss && (list[k + 1] || {}).ss !== x.ss) x.ss = null; });
+  }
+  A.exSS = (el) => { linkSS(S.active.exercises, +el.dataset.e); save(); closeModal(); render(true); };
+  A.planSS = (el) => { const d = getDay(el.dataset.p, el.dataset.d); linkSS(d.exercises, d.exercises.findIndex((c) => c.id === el.dataset.c)); save(); render(true); };
+
   // plans
-  A.newPlan = () => { const p = { id: uid(), name: 'My plan', days: [{ id: uid(), name: 'Day 1', exercises: [] }] }; S.plans.push(p); save(); go('plan/' + p.id); };
+  A.newPlan = () => { const p = { id: uid(), updatedAt: Date.now(), name: 'My plan', days: [{ id: uid(), name: 'Day 1', exercises: [] }] }; S.plans.push(p); save(); go('plan/' + p.id); };
   A.addTemplate = (el) => { const p = withIds(window.PLAN_TEMPLATES[+el.dataset.i]); S.plans.push(p); save(); toast('Plan added – edit anything you like'); go('plan/' + p.id); };
   A.dupPlan = (el) => { const p = withIds(getPlan(el.dataset.p)); p.name += ' (copy)'; S.plans.push(p); save(); go('plan/' + p.id); };
-  A.delPlan = (el) => { if (!confirm('Delete this plan? Your workout history is kept.')) return; S.plans = S.plans.filter((p) => p.id !== el.dataset.p); save(); go('plans'); };
+  A.delPlan = (el) => { if (!confirm('Delete this plan? Your workout history is kept.')) return; Store.remove(S, 'plans', el.dataset.p); save(); go('plans'); };
   A.addDay = (el) => { const p = getPlan(el.dataset.p); p.days.push({ id: uid(), name: `Day ${p.days.length + 1}`, exercises: [] }); save(); render(true); };
   A.delDay = (el) => { if (!confirm('Delete this day?')) return; const p = getPlan(el.dataset.p); p.days = p.days.filter((d) => d.id !== el.dataset.d); save(); render(true); };
   A.moveDay = (el) => { const p = getPlan(el.dataset.p); move(p.days, p.days.findIndex((d) => d.id === el.dataset.d), +el.dataset.dir); save(); render(true); };
@@ -796,14 +930,14 @@
   A.newCustom = () => customForm();
   A.delCustom = (el) => {
     if (!confirm('Delete this custom exercise? Logged history stays but will show a generic name.')) return;
-    S.custom = S.custom.filter((e) => e.id !== el.dataset.id); exIndex = null; save(); go('library');
+    Store.remove(S, 'custom', el.dataset.id); exIndex = null; save(); go('library');
   };
   A.pickCat = (el) => { pick.cat = el.dataset.c; $('#pickChips').innerHTML = pickChips(); $('#pickList').innerHTML = pickList(); };
   A.pick = (el) => onPick(el.dataset.id);
   A.closeModal = closeModal;
 
   // history
-  A.delSession = (el) => { if (!confirm('Delete this workout from history?')) return; S.sessions = S.sessions.filter((s) => s.id !== el.dataset.id); save(); go('history'); };
+  A.delSession = (el) => { if (!confirm('Delete this workout from history?')) return; Store.remove(S, 'sessions', el.dataset.id); save(); go('history'); };
   A.repeatSession = (el) => {
     const s = S.sessions.find((x) => x.id === el.dataset.id);
     const day = s.planId && getPlan(s.planId) && getPlan(s.planId).days.find((d) => d.id === s.dayId);
@@ -827,6 +961,7 @@
     if (!confirm('Erase ALL plans, history and settings on this device?')) return;
     if (!confirm('Really erase everything? This cannot be undone.')) return;
     S = DEFAULTS(); exIndex = null; save(); applyTheme(); go('train');
+    ['forge.theme', 'forge.accent'].forEach((k) => { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } });
   };
 
   // timer
@@ -883,6 +1018,7 @@
     else if (f === 'pickq') { pick.q = el.value; $('#pickList').innerHTML = pickList(); }
     else if (f === 'planName') { getPlan(el.dataset.p).name = el.value; save(); }
     else if (f === 'dayName') { getDay(el.dataset.p, el.dataset.d).name = el.value; save(); }
+    else if (HOOKS.input[f]) HOOKS.input[f](el, ev);
   });
   document.addEventListener('change', (ev) => {
     const el = ev.target, f = el.dataset.f;
@@ -933,10 +1069,12 @@
         if (!confirm(`Import ${d.sessions.length} workouts and ${d.plans.length} plans? This replaces the data on this device.`)) return;
         S = normalise(d); exIndex = null; save(); applyTheme(); toast('Backup imported'); go('train');
       }).catch(() => toast('That file is not a valid Forge backup'));
-    }
+    } else if (HOOKS.change[f]) HOOKS.change[f](el, ev);
   });
   document.addEventListener('submit', (ev) => {
-    if (ev.target.id !== 'customForm') return;
+    const fid = ev.target.getAttribute('id'); // not .id: a field named "id" would shadow it
+    if (HOOKS.submit[fid]) { ev.preventDefault(); HOOKS.submit[fid](ev.target, Object.fromEntries(new FormData(ev.target))); return; }
+    if (fid !== 'customForm') return;
     ev.preventDefault();
     const fd = Object.fromEntries(new FormData(ev.target));
     const name = fd.name.trim();
@@ -944,7 +1082,7 @@
     const ex = { id: 'c-' + window.slugify(name) + '-' + uid().slice(0, 4), name, category: fd.category, equipment: fd.equipment, type: fd.type, custom: true };
     if (ex.type === 'cardio') { ex.dist = fd.dist; ex.pace = fd.pace; }
     if (ex.type === 'carry') ex.dist = 'm';
-    S.custom.push(ex); exIndex = null; save();
+    S.custom.push(Store.touch(ex)); exIndex = null; save();
     if (pick.ctx && route().name !== 'library') { onPick(ex.id); if (pick.ctx.mode === 'plan') closeModal(); }
     else { closeModal(); toast('Exercise created'); go('exercise/' + encodeURIComponent(ex.id)); }
   });
@@ -1020,7 +1158,7 @@
 
   // ================= updates =================
   // A new service worker version means a new release. It waits until the user taps Refresh.
-  let swReg = null, appVersion = '', reloading = false, lastCheck = 0;
+  let swReg = null, appVersion = '', reloading = false, userUpdating = false, lastCheck = 0;
   function showUpdateBanner() {
     const el = $('#update');
     el.innerHTML = `<span>✨ A new version of Forge is available</span><button class="btn small primary" data-a="applyUpdate">Refresh</button>`;
@@ -1058,7 +1196,8 @@
       readVersion();
       checkForUpdate();
     }).catch(() => {});
-    navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloading) { reloading = true; location.reload(); } });
+    // only reload when the user tapped Refresh – not when the very first install takes control
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (userUpdating && !reloading) { reloading = true; location.reload(); } });
     // check when the app comes back to the foreground (at most once a minute) and every 30 minutes while open
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - lastCheck > 60e3) checkForUpdate(); });
     setInterval(() => checkForUpdate(), 30 * 60e3);
@@ -1067,15 +1206,33 @@
   A.applyUpdate = () => {
     // everything (including an in-progress workout) is already saved, so reloading is safe
     const w = swReg && swReg.waiting;
+    userUpdating = true;
     $('#update').innerHTML = '<span>Updating…</span>';
     if (w) w.postMessage('SKIP_WAITING'); else location.reload();
     setTimeout(() => { if (!reloading) location.reload(); }, 3000);
   };
 
-  // ================= boot =================
-  applyTheme();
-  render();
-  updateWakeLock();
-  setupUpdates();
+  // ================= public API for feature modules =================
+  Object.assign(Forge, {
+    get S() { return S; }, save, render, go, route, toast, esc, uid, num, unit, W, fmtDate, fmtDateLong,
+    exById, exAll, historyFor, working, isWarm, volume, fmtSet, fmtSets, showModal, closeModal, startWorkout,
+    getPlan, getDay, defaultCfg, beep, buzz, updateWakeLock, ICON, VIEWS, A, HOOKS, C, T,
+  });
+  Forge.boot = () => {
+    // bring an older cached page shell up to date (new tabs, update banner)
+    if (!document.getElementById('update')) { const d = document.createElement('div'); d.id = 'update'; d.hidden = true; d.setAttribute('role', 'status'); document.body.appendChild(d); }
+    if (!document.querySelector('#nav a[data-tab="food"]')) {
+      const ic = (p) => `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+      $('#nav').innerHTML = [['train', 'Train', '<path d="M6.5 6.5v11M17.5 6.5v11M3 9v6M21 9v6M6.5 12h11"/>'], ['plans', 'Plans', '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>'],
+        ['food', 'Food', '<path d="M7 3v8M4.5 3v5a2.5 2.5 0 0 0 5 0V3M7 11v10M17 21V3c-2.2 1.2-3.5 3.6-3.5 7v3H17"/>'], ['progress', 'Progress', '<path d="M3 20h18M6 16v-5M11 16V7M16 16v-7M21 4l-5 5-4-3-6 5"/>'],
+        ['timer', 'Timer', '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/>']].map(([t, l, p]) => `<a href="#/${t}" data-tab="${t}">${ic(p)}${l}</a>`).join('');
+    }
+    applyTheme();
+    render();
+    Forge.booted = true;
+    Store.persist();
+    updateWakeLock();
+    setupUpdates();
+  };
   window.__forge = { get state() { return S; } }; // handy for debugging
 })();

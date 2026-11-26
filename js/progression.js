@@ -155,16 +155,27 @@
       const missed = (h) => h && h.sets.some((s) => num(s.reps) != null && +s.reps < repMin);
       const prevTop = prev ? Math.max(0, ...prev.sets.map((s) => +s.weight || 0)) : 0;
 
+      // effort (RPE) on the top sets, if logged
+      const rpes = top.map((s) => +s.rpe).filter((r) => r > 0);
+      const rpe = rpes.length ? rpes.reduce((a, b) => a + b, 0) / rpes.length : null;
+      if (allTop && inc > 0 && rpe != null && rpe >= 9.5) {
+        return {
+          kind: 'hold',
+          sets: fill((i) => ({ weight: lastSet(i).weight != null ? +lastSet(i).weight : null, reps: +lastSet(i).reps || repMax })),
+          reason: `You hit the reps but they were near-max (RPE ${+rpe.toFixed(1)}). Repeat this weight until it feels like RPE 9 or less, then add weight.`,
+        };
+      }
       if (allTop && inc > 0) {
         const bw = ex.type === 'bodyweight';
+        const jump = rpe != null && rpe <= 7 ? inc * 2 : inc;
         const hasRange = cfg.repMin != null || cfg.repMax != null;
         // with a plan rep range, drop back to the bottom of it; without one, keep the same reps (linear progression)
         const upReps = (i) => (hasRange ? repMin : +lastSet(i).reps || repMin);
         return {
           kind: 'up',
-          sets: fill((i) => ({ weight: addW(+lastSet(i).weight || 0, inc), reps: upReps(i) })),
-          reason: bw
-            ? `You hit ${repMax}+ reps on every set. Add ${inc} ${unit} (vest/belt) or move to a harder variation${hasRange ? `, and start back at ${repMin} reps` : ''}.`
+          sets: fill((i) => ({ weight: addW(+lastSet(i).weight || 0, jump), reps: upReps(i) })),
+          reason: jump > inc ? `That felt easy (RPE ${+rpe.toFixed(1)}). Take a bigger jump: add ${jump} ${unit}${hasRange ? ` and start at ${repMin} reps` : ''}.` : bw
+            ? `You hit ${repMax}+ reps on every set. Add ${jump} ${unit} (vest/belt) or move to a harder variation${hasRange ? `, and start back at ${repMin} reps` : ''}.`
             : hasRange ? `You hit ${repMax}+ reps on every set. Add ${inc} ${unit} and build back up from ${repMin} reps.`
               : `You hit all your reps. Add ${inc} ${unit} and repeat the same reps.`,
         };
@@ -296,7 +307,47 @@
     return { kind: 'repeat', sets: fill((i) => ({ ...lastSet(i) })), reason: '' };
   }
 
-  const Core = { MAX_SETS, SET_FIELDS, toDisp, fromDisp, fmtW, parseTime, fmtTime, pace, e1rm, increment, bracket, suggest, num };
+  // Deload week: about 10% lighter and one set fewer (cardio: 20% shorter / easier)
+  function deload(ex, sg, unit) {
+    const sets = sg.sets.slice(0, Math.max(1, sg.sets.length - 1)).map((s) => {
+      const o = { ...s };
+      if (o.weight) o.weight = fromDisp(round((toDisp(o.weight, unit) || 0) * 0.9, unit === 'lb' ? 5 : 2.5), unit);
+      if (ex.type === 'cardio' && o.distance) { o.distance = +(o.distance * 0.8).toFixed(2); if (o.time) o.time = Math.round(o.time * 0.8 * 1.03); }
+      if (ex.type === 'timed' && o.time) o.time = Math.round(o.time * 0.8);
+      return o;
+    });
+    return { kind: 'deload', sets, reason: 'Deload week: lighter and one set fewer so you recover. Normal progression resumes next week.' };
+  }
+
+  // Warm-up ramp towards a working weight (kg). Returns sets in kg.
+  function warmups(ex, workKg, unit, barKg) {
+    const step = unit === 'lb' ? 5 : 2.5;
+    const W = toDisp(workKg, unit), bar = ex.equipment === 'Barbell' || ex.equipment === 'Smith Machine' || ex.equipment === 'Trap Bar' ? toDisp(barKg, unit) : 0;
+    const ramp = [[0, 10], [0.5, 5], [0.7, 3], [0.85, 1]];
+    const out = [];
+    for (const [pct, reps] of ramp) {
+      let w = pct === 0 ? bar : Math.max(bar, round(W * pct, step));
+      if (pct === 0 && (!bar || W < bar * 1.6)) continue;
+      if (w >= W || (out.length && toDisp(out[out.length - 1].weight, unit) >= w)) continue;
+      if (W - w < step) continue;
+      out.push({ weight: fromDisp(w, unit), reps });
+    }
+    return out;
+  }
+
+  // Plates per side for a total weight (kg in, plates in display unit)
+  function plates(totalKg, barKg, unit) {
+    if (totalKg == null || isNaN(totalKg)) return null;
+    const total = toDisp(totalKg, unit), bar = toDisp(barKg, unit);
+    if (total < bar) return { under: true };
+    const set = unit === 'lb' ? [45, 35, 25, 10, 5, 2.5] : [25, 20, 15, 10, 5, 2.5, 1.25];
+    let side = (total - bar) / 2;
+    const perSide = [];
+    for (const p of set) while (side >= p - 1e-6) { perSide.push(p); side -= p; }
+    return { perSide, left: side * 2 };
+  }
+
+  const Core = { deload, warmups, plates, MAX_SETS, SET_FIELDS, toDisp, fromDisp, fmtW, parseTime, fmtTime, pace, e1rm, increment, bracket, suggest, num };
   root.Core = Core;
   if (typeof module !== 'undefined') module.exports = Core;
 })(typeof window !== 'undefined' ? window : globalThis);

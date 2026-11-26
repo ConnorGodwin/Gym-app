@@ -1,8 +1,9 @@
 // Offline cache for the app shell.
 // IMPORTANT: bump VERSION on every release – that is what tells installed apps an update is available.
-const VERSION = 'forge-v7';
-const FILES = ['./', './index.html', './css/styles.css', './js/exercises.js', './js/templates.js', './js/progression.js', './js/app.js',
-  './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png'];
+const VERSION = 'forge-v8';
+const FILES = ['./', './index.html', './css/styles.css', './js/exercises.js', './js/templates.js', './js/progression.js', './js/store.js',
+  './js/howto.js', './js/app.js', './js/training.js', './js/nutrition.js', './js/body.js', './js/progress.js', './js/main.js',
+  './js/vendor/zxing.min.js', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png'];
 
 // Fetch fresh copies (bypassing the HTTP cache) so a new version never caches stale files.
 self.addEventListener('install', (e) => {
@@ -19,8 +20,9 @@ self.addEventListener('message', (e) => {
 // Network first (revalidating with the server so updates arrive), falling back to the cache when offline.
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
-  e.respondWith(fetch(e.request, { cache: 'no-cache' }).then((res) => {
-    if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); }
+  // fetch by URL: passing options with a page-navigation Request fails, which made v7 serve a stale page
+  e.respondWith(fetch(e.request.url, { cache: 'no-cache', credentials: 'same-origin' }).then((res) => {
+    if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(e.request.url, copy)); }
     return res;
   }).catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match('./index.html'))));
 });
