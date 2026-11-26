@@ -145,7 +145,7 @@
         <div><span class="muted small">Volume (${u})</span><b>${Math.round(C.toDisp(a.vol, u)).toLocaleString()}</b>${d(a.vol, b.vol, (v) => Math.round(C.toDisp(v, u)).toLocaleString())}</div>
         <div><span class="muted small">Cardio</span><b>${a.km.toFixed(1)} km</b>${d(a.km, b.km, (v) => v.toFixed(1))}</div>
         <div><span class="muted small">Avg calories</span><b>${a.kcal == null ? '–' : Math.round(a.kcal).toLocaleString()}</b>${a.kcal != null && b.kcal != null ? `<span class="delta muted">${Math.round(b.kcal).toLocaleString()} last wk</span>` : ''}</div>
-        <div><span class="muted small">Weight (avg)</span><b>${a.weight == null ? '–' : F.W(a.weight)}</b>${a.weight != null && b.weight != null ? `<span class="delta muted">${a.weight - b.weight >= 0 ? '+' : '−'}${F.W(Math.abs(a.weight - b.weight))} ${u}</span>` : ''}</div>
+        <div><span class="muted small">Weight (avg)</span><b>${a.weight == null ? '–' : F.fmtBW(a.weight)}</b>${a.weight != null && b.weight != null ? `<span class="delta muted">${F.fmtBWDelta(a.weight - b.weight)}</span>` : ''}</div>
       </div>
       <div class="row gap streaks"><div class="card grow"><b>🔥 ${F.weekStreak()}</b><span class="muted small">week training streak</span></div><div class="card grow"><b>🥗 ${foodDayStreak()}</b><span class="muted small">day food-log streak</span></div></div>
       <h2>Last 18 weeks</h2>

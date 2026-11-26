@@ -451,6 +451,68 @@ Band Shoulder Dislocate|Mobility|Band|bodyweight
 Leg Swings|Mobility|Bodyweight|bodyweight
 Foam Rolling|Mobility|Other|timed
 Yoga Flow|Mobility|Bodyweight|timed
+Football Match|Sports|Other|timed
+Football Training|Sports|Other|timed
+Rugby Training|Sports|Other|timed
+Rugby Match|Sports|Other|timed
+Basketball Game|Sports|Other|timed
+Netball Game|Sports|Other|timed
+Hockey Training|Sports|Other|timed
+Cricket Nets|Sports|Other|timed
+Volleyball|Sports|Other|timed
+Tennis Match|Sports|Other|timed
+Padel Match|Sports|Other|timed
+Squash Match|Sports|Other|timed
+Badminton|Sports|Other|timed
+Golf Round|Sports|Other|timed
+Climbing Session|Sports|Other|timed
+Bouldering Session|Sports|Other|timed
+Martial Arts Class|Sports|Other|timed
+Dance Class|Sports|Other|timed
+Skiing / Snowboarding|Sports|Other|timed
+Surfing|Sports|Other|timed
+Kayaking|Rowing & Erg|Other|cardio|dist=km|pace=speed
+Stand-Up Paddleboarding|Rowing & Erg|Other|cardio|dist=km|pace=speed
+Pull Buoy Swim|Swimming|Other|cardio|dist=m|pace=swim
+Brick Run (off the bike)|Running|Bodyweight|cardio|dist=km|pace=run
+Couch to 5K Run/Walk|Running|Bodyweight|timed
+Brisk Walk|Running|Bodyweight|cardio|dist=km|pace=run
+Shadow Boxing|Combat|Bodyweight|timed
+Heavy Bag Rounds|Combat|Other|timed
+Pad Work|Combat|Other|timed
+Speed Bag|Combat|Other|timed
+Sparring Rounds|Combat|Other|timed
+Kicks on Bag|Combat|Other|timed
+Grappling Drills|Combat|Other|timed
+Sprawl|Combat|Bodyweight|bodyweight
+Agility Ladder|Agility & Plyo|Other|timed
+Cone Drill (5-10-5)|Agility & Plyo|Other|timed
+Lateral Shuffle|Agility & Plyo|Bodyweight|timed
+Reaction Ball Drill|Agility & Plyo|Other|timed
+Skater Jump|Agility & Plyo|Bodyweight|bodyweight
+Lateral Bound|Agility & Plyo|Bodyweight|bodyweight
+Bounding|Agility & Plyo|Bodyweight|cardio|dist=m|pace=run
+Tuck Jump|Agility & Plyo|Bodyweight|bodyweight
+Depth Jump|Agility & Plyo|Other|bodyweight
+Single-Leg Hop|Agility & Plyo|Bodyweight|bodyweight
+Hurdle Hops|Agility & Plyo|Other|bodyweight
+Vertical Jump|Agility & Plyo|Bodyweight|bodyweight
+A-Skips|Agility & Plyo|Bodyweight|cardio|dist=m|pace=run
+Hangboard Hang|Forearms|Other|timed
+Lock-Off Hold|Back|Bodyweight|timed
+Campus Board Ladders|Forearms|Other|bodyweight
+Reverse Wrist Curl (Antagonist)|Forearms|Dumbbell|strength
+Single-Leg Balance|Mobility|Bodyweight|timed
+Heel-to-Toe Walk|Mobility|Bodyweight|timed
+Sit-to-Stand|Quads|Bodyweight|bodyweight
+Wall Push-Up|Chest|Bodyweight|bodyweight
+Seated Marching|Core|Bodyweight|timed
+Breathing / Meditation|Mobility|Other|timed
+Neck Mobility|Mobility|Bodyweight|timed
+Chin Tuck|Mobility|Bodyweight|bodyweight
+Wall Angels|Mobility|Bodyweight|bodyweight
+Glute Activation (Banded)|Glutes|Band|bodyweight
+Ankle Mobility Drill|Mobility|Bodyweight|bodyweight
 `;
 
   const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');

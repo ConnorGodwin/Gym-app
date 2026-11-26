@@ -4,9 +4,7 @@
   const F = window.Forge;
   const { esc, HOOKS, A, VIEWS, ICON } = F;
   const S = () => F.S;
-  const lenUnit = () => (F.unit() === 'lb' ? 'in' : 'cm');
-  const toLen = (cm) => (lenUnit() === 'in' ? cm / 2.54 : cm);
-  const fromLen = (v) => (lenUnit() === 'in' ? v * 2.54 : v);
+  const { lenUnit, toLen, fromLen } = F;
   const r1 = (v) => Math.round(v * 10) / 10;
   const MEASURES = [['waist', 'Waist'], ['chest', 'Chest'], ['hips', 'Hips'], ['arm', 'Arm'], ['thigh', 'Thigh'], ['neck', 'Neck'], ['bf', 'Body fat %']];
 
@@ -53,16 +51,17 @@
       ${F.progressTabs('body')}
       <h2>Bodyweight</h2>
       <div class="card">
-        ${last ? `<div class="stats"><div><b>${F.W(last.avg)}</b><span>7-day avg (${F.unit()})</span></div>
-          <div><b>${rate == null ? '–' : (rate >= 0 ? '+' : '') + F.W(rate)}</b><span>last 7 days</span></div>
-          <div><b>${old && old !== last ? (last.avg - old.avg >= 0 ? '+' : '') + F.W(last.avg - old.avg) : '–'}</b><span>last 30 days</span></div></div>` : '<p class="muted small">Weigh in first thing in the morning, a few times a week. The 7-day average smooths out daily water swings.</p>'}
+        <div class="row between"><span class="muted small">Units</span>${F.unitSeg('bodyUnit', F.bwUnit(), [['kg', 'kg'], ['lb', 'lb'], ['st', 'st & lb']])}</div>
+        ${last ? `<div class="stats"><div><b>${F.fmtBW(last.avg)}</b><span>7-day average</span></div>
+          <div><b>${rate == null ? '–' : F.fmtBWDelta(rate)}</b><span>last 7 days</span></div>
+          <div><b>${old && old !== last ? F.fmtBWDelta(last.avg - old.avg) : '–'}</b><span>last 30 days</span></div></div>` : '<p class="muted small">Weigh in first thing in the morning, a few times a week. The 7-day average smooths out daily water swings.</p>'}
         ${weightChart(recent)}
         <form id="weightForm" class="row gap nowrap">
           <input type="date" name="date" value="${F.dateKey(Date.now())}" max="${F.dateKey(Date.now())}">
-          <input class="grow" name="w" inputmode="decimal" placeholder="${F.unit()}" aria-label="Weight in ${F.unit()}" required>
+          ${F.bwInputs('w', null)}
           <button class="btn primary">Log</button>
         </form>
-        ${tr.slice(-5).reverse().map((p) => { const rec = S().weights.find((w) => w.date === p.date); return `<div class="row between list-item plain"><span>${F.fmtDate(F.fromKey(p.date), { weekday: 'short', day: 'numeric', month: 'short' })}</span><span>${F.W(p.kg)} ${F.unit()}</span><button class="icon-btn" data-a="delWeight" data-id="${rec.id}" aria-label="Delete">${ICON.x}</button></div>`; }).join('')}
+        ${tr.slice(-5).reverse().map((p) => { const rec = S().weights.find((w) => w.date === p.date); return `<div class="row between list-item plain"><span>${F.fmtDate(F.fromKey(p.date), { weekday: 'short', day: 'numeric', month: 'short' })}</span><span>${F.fmtBW(p.kg)}</span><button class="icon-btn" data-a="delWeight" data-id="${rec.id}" aria-label="Delete">${ICON.x}</button></div>`; }).join('')}
       </div>
       <h2>Measurements</h2>
       <div class="card">
@@ -71,6 +70,7 @@
           const fmt = (v) => (k === 'bf' ? `${r1(v)}%` : `${r1(toLen(v))} ${lenUnit()}`);
           return `<div><span class="muted small">${l}</span><b>${fmt(b)}</b>${ms.length > 1 && d ? `<span class="small ${d < 0 ? 'good' : 'muted'}">${d > 0 ? '+' : '−'}${k === 'bf' ? r1(Math.abs(d)) + '%' : r1(toLen(Math.abs(d))) + ' ' + lenUnit()}</span>` : ''}</div>`;
         }).join('')}</div><p class="muted small">Change since ${F.fmtDate(F.fromKey(ms[0].date))}. Last measured ${F.fmtDate(F.fromKey(ms[ms.length - 1].date))}.</p>` : '<p class="muted small">Measure every 2–4 weeks, same time of day, tape snug but not tight.</p>'}
+        <div class="row between"><span class="muted small">Units</span>${F.unitSeg('lengthUnit', lenUnit(), [['cm', 'cm'], ['in', 'in']])}</div>
         <button class="btn block" data-a="measureForm">＋ Add measurements</button>
       </div>
       <h2>Progress photos</h2>
@@ -84,9 +84,8 @@
 
   // ---------- weight ----------
   HOOKS.submit.weightForm = (form, fd) => {
-    const n = F.num(fd.w);
-    if (!n || n <= 0) return;
-    const kg = F.C.fromDisp(n, F.unit());
+    const kg = F.parseBW((k) => fd[k], 'w');
+    if (!kg || kg < 25 || kg > 350) { F.toast('Enter a valid weight'); return; }
     const date = fd.date || F.dateKey(Date.now());
     const ex = S().weights.find((w) => w.date === date);
     if (ex) { ex.kg = kg; Store.touch(ex); } else S().weights.push(Store.touch({ date, kg }));

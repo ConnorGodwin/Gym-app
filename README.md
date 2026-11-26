@@ -8,8 +8,8 @@ Live: https://connorgodwin.github.io/Gym-app/
 ## Features
 
 **Training**
-- Custom plans (or templates: PPL, Upper/Lower, Full Body, 5×5, HYROX, 5K, cycling, bodyweight), 1–5 working sets, rep ranges, weights, rest times.
-- 441 exercises and custom exercises. 137 have demo images (26 with short videos) and step-by-step instructions from [wger](https://wger.de), plus coaching cues and a YouTube link for every exercise.
+- Custom plans, or 34 templates in seven groups: strength (PPL, Upper/Lower, 5×5, powerlifting, calisthenics, kettlebell, beginner machines), running and endurance (Couch to 5K, 5K, 10K, half marathon, marathon, triathlon, swimming, rowing, cycling), HYROX and functional fitness, team sports (football, rugby, basketball/netball), racket and combat (tennis/padel/squash, boxing, MMA), outdoor (climbing, golf, ski prep), and health (daily mobility, posture, 50+ strength and balance, walking, yoga). Each plan has 1–5 working sets, rep ranges, weights and rest times.
+- 503 exercises (including sport sessions, agility/plyometrics and combat drills) and custom exercises. 137 have demo images (26 with short videos) and step-by-step instructions from [wger](https://wger.de), plus coaching cues and a YouTube link for every exercise.
 - Last session shown per set, and next-session suggestions based on double progression. RPE feeds in: very hard sets hold the weight, easy sets jump further.
 - Warm-up sets (auto ramp), set types (warm-up, drop, failure), RPE per set, plate calculator, supersets (rest only after the last exercise).
 - Weekly schedule with an "Up next" card and week strip, and optional deload weeks (about 10% lighter, one set fewer).
@@ -27,7 +27,7 @@ Live: https://connorgodwin.github.io/Gym-app/
 - Weekly summary against last week, training and food-log streaks, an 18-week calendar heat-map, a muscle map with weekly sets per muscle, a records board, and achievements.
 
 **App**
-- Light, dark or automatic theme, 12 accent colours plus a custom colour, kg/lb.
+- Light, dark or automatic theme, 12 accent colours plus a custom colour, kg/lb for lifting, and separate body units (kg, lb or st & lb; cm or ft & in; cm or in).
 - Update banner, JSON backup export/import, and the screen stays awake during workouts.
 
 ## Run it

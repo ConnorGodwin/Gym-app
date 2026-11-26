@@ -411,3 +411,17 @@ input.short { width: 90px; text-align: center; }
 .steps summary { cursor: pointer; font-weight: 600; padding: 8px 0; color: var(--accent); }
 .credit { font-size: .72rem; color: var(--muted); margin: 8px 0 0; }
 .credit a { color: var(--muted); text-decoration: underline; }
+/* unit pickers + compound inputs (st/lb, ft/in) */
+.small-seg button { padding: 5px 10px; font-size: .8rem; }
+.unitrow { padding: 8px 0; border-top: 1px solid var(--border); }
+.pair2 { display: inline-flex; align-items: center; gap: 6px; }
+.pair2 input { width: 74px; text-align: center; }
+.pair2 i { font-style: normal; color: var(--muted); font-size: .85rem; }
+.unitin { margin-top: 8px; }
+#weightForm .pair2 { flex: 1 1 0; min-width: 0; }
+#weightForm .pair2 input { flex: 1 1 0; min-width: 0; width: auto; }
+.tpl-group { margin: 18px 0 4px; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+/* weigh-in form: weight boxes on their own row, date + Log underneath */
+#weightForm { flex-wrap: wrap; }
+#weightForm .pair2 { flex: 1 1 100%; order: -1; }
+#weightForm .pair2 input { flex: 1 1 0; }

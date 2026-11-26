@@ -115,7 +115,7 @@
         </div>
       </div>
       ${showAd ? `<div class="card adapt"><b>Weekly check-in</b>
-        <p class="small">Over the last ${ad.days} logged days you ate about <b>${ad.intake.toLocaleString()} kcal</b> and your weight changed <b>${ad.kgPerWeek >= 0 ? '+' : '−'}${Math.abs(Math.round(ad.kgPerWeek * 100) / 100).toFixed(2)} kg/week</b>, so your real maintenance is about <b>${ad.tdee.toLocaleString()} kcal</b>.</p>
+        <p class="small">Over the last ${ad.days} logged days you ate about <b>${ad.intake.toLocaleString()} kcal</b> and your weight changed <b>${F.fmtBWDelta(ad.kgPerWeek)}/week</b>, so your real maintenance is about <b>${ad.tdee.toLocaleString()} kcal</b>.</p>
         <p class="small">Suggested target for your goal: <b>${ad.suggest.toLocaleString()} kcal</b> (currently ${ad.current.toLocaleString()}).</p>
         <div class="row gap"><button class="btn small primary" data-a="adaptApply" data-v="${ad.suggest}">Use ${ad.suggest.toLocaleString()} kcal</button><button class="btn small" data-a="adaptDismiss">Not now</button></div></div>` : ''}
       ${planned.length && !entries.length ? `<div class="card row between"><div><b>Meal plan for ${F.DOW[dow]}</b><div class="small muted">${planned.length} items · ${r0(plannedK).toLocaleString()} kcal</div></div><button class="btn small primary" data-a="logPlan">Log all</button></div>` : ''}
@@ -620,18 +620,17 @@
       <div class="card">
         <h3>About you</h3>
         <label class="toggle"><span>Sex (for the BMR formula)</span><select data-f="prof" data-k="sex"><option value="male" ${pr.sex === 'male' ? 'selected' : ''}>Male</option><option value="female" ${pr.sex === 'female' ? 'selected' : ''}>Female</option></select></label>
-        ${pf('age', 'Age', pr.age)}${pf('heightCm', 'Height (cm)', pr.heightCm)}
-        ${latestWeight() ? `<div class="toggle"><span>Weight</span><span>${F.W(kg)} ${F.unit()} <a class="link small" href="#/body">update</a></span></div>` : pf('weightKg', `Weight (${F.unit()})`, F.W(kg))}
+        ${pf('age', 'Age', pr.age)}
+        <div class="toggle col"><div class="row between"><span>Height</span>${F.unitSeg('heightUnit', F.htUnit(), [['cm', 'cm'], ['ftin', 'ft & in']])}</div>
+          <div class="unitin" data-f="profHeight">${F.heightInputs('h', pr.heightCm)}</div></div>
+        <div class="toggle col"><div class="row between"><span>Weight</span>${F.unitSeg('bodyUnit', F.bwUnit(), [['kg', 'kg'], ['lb', 'lb'], ['st', 'st & lb']])}</div>
+          ${latestWeight() ? `<div class="row between"><b>${F.fmtBW(kg)}</b><a class="link small" href="#/body">from your weigh-ins · update</a></div>` : `<div class="unitin" data-f="profWeight">${F.bwInputs('w', kg)}</div>`}</div>
         <label class="toggle col"><span>Activity</span><select data-f="prof" data-k="activity">${opt(ACTIVITY, pr.activity)}</select></label>
         <label class="toggle col"><span>Goal</span><select data-f="prof" data-k="goal">${opt(GOALS, pr.goal)}</select></label>
         ${pf('proteinPerKg', 'Protein (g per kg bodyweight)', pr.proteinPerKg)}
         ${pf('trainingBonus', 'Extra kcal on training days', pr.trainingBonus)}
       </div>
-      <div class="card">
-        <div class="row between"><span class="muted small">BMR ${calc.bmr.toLocaleString()} · maintenance ≈ ${calc.tdee.toLocaleString()} kcal</span></div>
-        <div class="macro4"><div><b>${calc.kcal.toLocaleString()}</b><span>kcal</span></div><div><b>${calc.p}</b><span>protein g</span></div><div><b>${calc.c}</b><span>carbs g</span></div><div><b>${calc.f}</b><span>fat g</span></div></div>
-        <button class="btn block primary" data-a="useCalc">Use these targets</button>
-      </div>
+      <div class="card"><div id="calcCard">${calcCard(calc)}</div><button class="btn block primary" data-a="useCalc">Use these targets</button></div>
       <div class="card">
         <h3>Your targets</h3>
         ${t ? '' : '<p class="muted small">Not set yet. Use the calculated targets above, or type your own.</p>'}
@@ -640,13 +639,26 @@
       </div>
       <p class="muted small">Calculated with the Mifflin-St Jeor formula. After two to three weeks of logging food and weighing in, the Food tab shows a weekly check-in with your real maintenance calories.</p>`;
   };
+  const calcCard = (calc) => `
+        <div class="row between"><span class="muted small">BMR ${calc.bmr.toLocaleString()} · maintenance ≈ ${calc.tdee.toLocaleString()} kcal</span></div>
+        <div class="macro4"><div><b>${calc.kcal.toLocaleString()}</b><span>kcal</span></div><div><b>${calc.p}</b><span>protein g</span></div><div><b>${calc.c}</b><span>carbs g</span></div><div><b>${calc.f}</b><span>fat g</span></div></div>`;
+  // refresh only the calculated numbers, so typing in the next box isn't interrupted
+  const refreshCalc = () => { const el = document.getElementById('calcCard'); const n = S().nutrition; if (el) el.innerHTML = calcCard(calcTargets(n.profile, latestWeight() || n.profile.weightKg || 75)); };
   HOOKS.change.prof = (el) => {
     const pr = S().nutrition.profile, k = el.dataset.k;
     if (k === 'sex') pr.sex = el.value;
-    else if (k === 'weightKg') { const n = F.num(el.value); if (n) pr.weightKg = F.C.fromDisp(n, F.unit()); }
     else { const n = F.num(el.value); if (n != null) pr[k] = n; }
-    F.save(); F.render(true);
+    F.save(); refreshCalc();
   };
+  // height / weight boxes: read every box in the group whenever one changes
+  document.addEventListener('change', (ev) => {
+    const box = ev.target.closest && ev.target.closest('[data-f="profHeight"], [data-f="profWeight"]');
+    if (!box) return;
+    const pr = S().nutrition.profile, get = F.fieldsIn(box);
+    if (box.dataset.f === 'profHeight') { const cm = F.parseHeight(get, 'h'); if (cm && cm > 90 && cm < 250) pr.heightCm = Math.round(cm * 10) / 10; }
+    else { const kg = F.parseBW(get, 'w'); if (kg && kg > 25 && kg < 350) pr.weightKg = kg; }
+    F.save(); refreshCalc();
+  });
   A.useCalc = () => {
     const n = S().nutrition, c = calcTargets(n.profile, latestWeight() || n.profile.weightKg || 75);
     n.targets = { kcal: c.kcal, p: c.p, c: c.c, f: c.f }; F.save(); F.toast('Targets set'); F.render(true);

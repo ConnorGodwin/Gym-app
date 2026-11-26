@@ -27,6 +27,64 @@
   const W = (kg) => (kg == null ? '' : C.fmtW(kg, unit()));
   const num = (v) => { const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? null : n; };
 
+  // ---------- body units (separate from the kg/lb used for lifting) ----------
+  const LB_KG = 0.45359237;
+  const bwUnit = () => S.settings.bodyUnit || (unit() === 'lb' ? 'lb' : 'kg');       // kg | lb | st
+  const htUnit = () => S.settings.heightUnit || (unit() === 'lb' ? 'ftin' : 'cm');   // cm | ftin
+  const lenUnit = () => S.settings.lengthUnit || (unit() === 'lb' ? 'in' : 'cm');    // cm | in
+  const r1 = (v) => Math.round(v * 10) / 10;
+  function fmtBW(kg) {
+    if (kg == null || isNaN(kg)) return '–';
+    const u = bwUnit();
+    if (u === 'kg') return `${r1(kg)} kg`;
+    const lb = kg / LB_KG;
+    if (u === 'lb') return `${r1(lb)} lb`;
+    let st = Math.floor(lb / 14), rem = Math.round(lb - st * 14);
+    if (rem === 14) { st++; rem = 0; }
+    return `${st} st ${rem} lb`;
+  }
+  // changes are shown in kg or lb (stone users see lb, as UK scales do)
+  const fmtBWDelta = (kg) => { const v = bwUnit() === 'kg' ? r1(kg) : r1(kg / LB_KG); return `${v > 0 ? '+' : v < 0 ? '−' : '±'}${Math.abs(v)} ${bwUnit() === 'kg' ? 'kg' : 'lb'}`; };
+  // input boxes for a bodyweight; name is the field prefix
+  function bwInputs(name, kg) {
+    const u = bwUnit();
+    if (u === 'st') {
+      const lb = kg != null ? kg / LB_KG : null;
+      const st = lb != null ? Math.floor(lb / 14) : '';
+      return `<span class="pair2"><input name="${name}_st" data-bw="st" inputmode="numeric" value="${st}" placeholder="st" aria-label="stone"><i>st</i><input name="${name}_lb" data-bw="lb" inputmode="decimal" value="${lb != null ? r1(lb - st * 14) : ''}" placeholder="lb" aria-label="pounds"><i>lb</i></span>`;
+    }
+    return `<span class="pair2"><input name="${name}" inputmode="decimal" value="${kg != null ? (u === 'kg' ? r1(kg) : r1(kg / LB_KG)) : ''}" placeholder="${u}" aria-label="weight in ${u}"><i>${u}</i></span>`;
+  }
+  function parseBW(get, name) { // get(fieldName) -> string
+    const u = bwUnit();
+    if (u === 'st') { const st = num(get(name + '_st')) || 0, lb = num(get(name + '_lb')) || 0; return st || lb ? (st * 14 + lb) * LB_KG : null; }
+    const v = num(get(name)); if (v == null) return null;
+    return u === 'kg' ? v : v * LB_KG;
+  }
+  function fmtHeight(cm) {
+    if (!cm) return '–';
+    if (htUnit() === 'cm') return `${Math.round(cm)} cm`;
+    const inch = cm / 2.54; let ft = Math.floor(inch / 12), i = Math.round(inch - ft * 12);
+    if (i === 12) { ft++; i = 0; }
+    return `${ft}′ ${i}″`;
+  }
+  function heightInputs(name, cm) {
+    if (htUnit() === 'cm') return `<span class="pair2"><input name="${name}" inputmode="numeric" value="${cm ? Math.round(cm) : ''}" placeholder="cm" aria-label="height in cm"><i>cm</i></span>`;
+    const inch = cm ? cm / 2.54 : null; let ft = inch != null ? Math.floor(inch / 12) : '', i = inch != null ? Math.round(inch - ft * 12) : '';
+    if (i === 12) { ft++; i = 0; }
+    return `<span class="pair2"><input name="${name}_ft" inputmode="numeric" value="${ft}" placeholder="ft" aria-label="feet"><i>ft</i><input name="${name}_in" inputmode="decimal" value="${i}" placeholder="in" aria-label="inches"><i>in</i></span>`;
+  }
+  function parseHeight(get, name) {
+    if (htUnit() === 'cm') return num(get(name));
+    const ft = num(get(name + '_ft')) || 0, i = num(get(name + '_in')) || 0;
+    return ft || i ? (ft * 12 + i) * 2.54 : null;
+  }
+  const toLen = (cm) => (lenUnit() === 'in' ? cm / 2.54 : cm);
+  const fromLen = (v) => (lenUnit() === 'in' ? v * 2.54 : v);
+  // read named inputs inside a container element
+  const fieldsIn = (el) => (n) => { const i = el.querySelector(`[name="${n}"]`); return i ? i.value : ''; };
+  const unitSeg = (key, cur, opts) => `<div class="seg small-seg">${opts.map(([v, l]) => `<button class="${cur === v ? 'on' : ''}" data-a="setUnit" data-k="${key}" data-v="${v}">${l}</button>`).join('')}</div>`;
+
   // ================= exercises =================
   let exIndex = null;
   const exAll = () => window.EXERCISES.concat(S.custom);
@@ -260,6 +318,8 @@
   }
 
   // ---------- Plans ----------
+  const TPL_GROUPS = [...new Set(window.PLAN_TEMPLATES.map((t) => t.group || 'Other'))];
+  let tplGroup = 'All';
   VIEWS.plans = () => `
     <header class="top"><h1>Plans</h1><a class="btn small" href="#/library">Exercise library</a></header>
     <button class="btn block primary" data-a="newPlan">＋ New blank plan</button>
@@ -268,13 +328,16 @@
         <div><h3>${esc(p.name)}</h3><div class="muted small">${p.days.length} day${p.days.length === 1 ? '' : 's'} · ${p.days.map((d) => esc(d.name)).join(', ')}</div></div><span class="chev">›</span>
       </a>`).join('')}
     <h2>Templates</h2>
-    <p class="muted small">Add a template, then change anything: days, exercises, sets, reps, weights and rest times.</p>
-    ${window.PLAN_TEMPLATES.map((t, i) => `
+    <p class="muted small">${window.PLAN_TEMPLATES.length} plans for the gym, running, sports and health. Add one, then change anything: days, exercises, sets, reps, weights and rest times.</p>
+    <div class="chips">${['All', ...TPL_GROUPS].map((g) => `<button class="chip ${tplGroup === g ? 'on' : ''}" data-a="tplGroup" data-v="${esc(g)}">${esc(g)}</button>`).join('')}</div>
+    ${TPL_GROUPS.filter((g) => tplGroup === 'All' || tplGroup === g).map((g) => `
+      ${tplGroup === 'All' ? `<h3 class="tpl-group">${esc(g)}</h3>` : ''}
+      ${window.PLAN_TEMPLATES.map((t, i) => ({ t, i })).filter(({ t }) => (t.group || 'Other') === g).map(({ t, i }) => `
       <div class="card">
         <div class="row between"><h3>${esc(t.name)}</h3><button class="btn small" data-a="addTemplate" data-i="${i}">Add</button></div>
         <div class="muted small">${esc(t.desc)}</div>
         <div class="small">${t.days.map((d) => esc(d.name)).join(' · ')}</div>
-      </div>`).join('')}
+      </div>`).join('')}`).join('')}
   `;
 
   VIEWS.plan = (id) => {
@@ -455,7 +518,10 @@
         </div>
       </div>
       <div class="card">
-        <div class="row between"><span>Weight unit</span><div class="seg">${['kg', 'lb'].map((u) => `<button class="${st.unit === u ? 'on' : ''}" data-a="unit" data-u="${u}">${u}</button>`).join('')}</div></div>
+        <div class="row between"><span>Lifting weights</span><div class="seg">${['kg', 'lb'].map((u) => `<button class="${st.unit === u ? 'on' : ''}" data-a="unit" data-u="${u}">${u}</button>`).join('')}</div></div>
+        <div class="row between unitrow"><span>Bodyweight</span>${unitSeg('bodyUnit', bwUnit(), [['kg', 'kg'], ['lb', 'lb'], ['st', 'st & lb']])}</div>
+        <div class="row between unitrow"><span>Height</span>${unitSeg('heightUnit', htUnit(), [['cm', 'cm'], ['ftin', 'ft & in']])}</div>
+        <div class="row between unitrow"><span>Body measurements</span>${unitSeg('lengthUnit', lenUnit(), [['cm', 'cm'], ['in', 'in']])}</div>
         <label class="toggle"><span>Default rest</span><input class="short" data-f="setting" data-k="rest" inputmode="decimal" value="${C.fmtTime(st.rest)}"></label>
         ${tog('autoRest', 'Start rest timer when a set is ticked')}
         ${tog('sound', 'Timer sounds')}
@@ -905,6 +971,7 @@
 
   // plans
   A.newPlan = () => { const p = { id: uid(), updatedAt: Date.now(), name: 'My plan', days: [{ id: uid(), name: 'Day 1', exercises: [] }] }; S.plans.push(p); save(); go('plan/' + p.id); };
+  A.tplGroup = (el) => { tplGroup = el.dataset.v; render(true); };
   A.addTemplate = (el) => { const p = withIds(window.PLAN_TEMPLATES[+el.dataset.i]); S.plans.push(p); save(); toast('Plan added – edit anything you like'); go('plan/' + p.id); };
   A.dupPlan = (el) => { const p = withIds(getPlan(el.dataset.p)); p.name += ' (copy)'; S.plans.push(p); save(); go('plan/' + p.id); };
   A.delPlan = (el) => { if (!confirm('Delete this plan? Your workout history is kept.')) return; Store.remove(S, 'plans', el.dataset.p); save(); go('plans'); };
@@ -938,6 +1005,7 @@
   // settings
   A.accent = (el) => { S.settings.accent = el.dataset.v; save(); applyTheme(); render(true); };
   A.theme = (el) => { S.settings.theme = el.dataset.v; save(); applyTheme(); render(true); };
+  A.setUnit = (el) => { S.settings[el.dataset.k] = el.dataset.v; save(); render(true); };
   A.unit = (el) => { S.settings.unit = el.dataset.u; save(); render(true); };
   A.export = () => {
     const blob = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' });
@@ -1209,7 +1277,7 @@
   Object.assign(Forge, {
     get S() { return S; }, save, render, go, route, toast, esc, uid, num, unit, W, fmtDate, fmtDateLong,
     exById, exAll, historyFor, working, isWarm, volume, fmtSet, fmtSets, showModal, closeModal, startWorkout,
-    getPlan, getDay, defaultCfg, sheetHead, beep, buzz, updateWakeLock, ICON, VIEWS, A, HOOKS, C, T,
+    getPlan, getDay, defaultCfg, sheetHead, bwUnit, htUnit, lenUnit, fmtBW, fmtBWDelta, bwInputs, parseBW, fmtHeight, heightInputs, parseHeight, toLen, fromLen, fieldsIn, unitSeg, beep, buzz, updateWakeLock, ICON, VIEWS, A, HOOKS, C, T,
   });
   Forge.boot = () => {
     applyTheme();
