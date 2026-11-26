@@ -1,6 +1,6 @@
 // Offline cache for the app shell.
 // IMPORTANT: bump VERSION on every release – that is what tells installed apps an update is available.
-const VERSION = 'forge-v12';
+const VERSION = 'forge-v13';
 const FILES = ['./', './index.html', './css/styles.css', './js/exercises.js', './js/templates.js', './js/progression.js', './js/store.js',
   './js/howto.js', './js/demos.js', './js/app.js', './js/training.js', './js/nutrition.js', './js/body.js', './js/progress.js', './js/main.js',
   './js/vendor/zxing.min.js', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png'];

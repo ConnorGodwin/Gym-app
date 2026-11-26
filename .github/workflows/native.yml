@@ -1,0 +1,97 @@
+# Builds the Android and iOS apps (Capacitor) from the web app.
+# - Android: always produces an installable test APK (download it from the run's Artifacts).
+#   If the signing secrets below are set, also produces a signed release bundle (.aab) for Google Play.
+# - iOS: compiles the app for the simulator to prove the project builds. Signed App Store builds
+#   need Apple certificates added as secrets later.
+#
+# Android signing secrets (Settings → Secrets and variables → Actions):
+#   ANDROID_KEYSTORE_BASE64   base64 of your upload keystore (.jks)
+#   ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+name: Native apps
+
+on:
+  push:
+    paths:
+      - 'native/**'
+      - 'js/**'
+      - 'css/**'
+      - 'index.html'
+      - 'privacy.html'
+      - 'images/**'
+      - 'videos/**'
+      - 'icons/**'
+      - '.github/workflows/native.yml'
+  workflow_dispatch:
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+      FORGE_VERSION_CODE: ${{ github.run_number }}
+      FORGE_VERSION_NAME: 1.0.${{ github.run_number }}
+    defaults:
+      run:
+        working-directory: native
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: native/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - run: npm ci
+      - run: npm run build:web && npx cap sync android
+      - name: Build test APK
+        working-directory: native/android
+        run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: forge-android-test-apk
+          path: native/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+      - name: Build signed release bundle for Google Play
+        if: env.HAS_KEYSTORE == 'true'
+        working-directory: native/android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          FORGE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          FORGE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          FORGE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          FORGE_KEYSTORE_FILE="$RUNNER_TEMP/upload.jks" ./gradlew bundleRelease --no-daemon
+      - if: env.HAS_KEYSTORE == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: forge-android-release-aab
+          path: native/android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 30
+
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: native
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: native/package-lock.json
+      - run: npm ci
+      - run: npm run build:web && npx cap sync ios
+      - name: Build for the iOS simulator (no signing)
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath ios/DerivedData CODE_SIGNING_ALLOWED=NO build | tail -40
+          test "${PIPESTATUS[0]}" -eq 0

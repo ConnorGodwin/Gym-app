@@ -396,11 +396,21 @@
     } catch (e) { F.toast('Couldn’t reach the food database'); if (msg) msg.textContent = 'Point the camera at a barcode'; }
   }
   HOOKS.submit.barcodeForm = (form, fd) => lookupBarcode(fd.code || '');
+  A.nativeScan = async () => {
+    try { const code = await F.nativeScan(); if (code) lookupBarcode(code); }
+    catch (e) { F.toast('Couldn’t open the scanner. Type the barcode instead.'); }
+  };
 
   // ---------- barcode scanner ----------
   let scan = null;
   async function startScan() {
     const video = $('#scanVideo'), msg = $('#scanMsg');
+    if (F.nativeScan) {
+      // app version: use the phone's own scanner
+      const box = video && video.closest('.scanbox'); if (box) box.outerHTML = '<button class="btn block primary big" data-a="nativeScan">📷 Scan a barcode</button>';
+      if (msg) msg.textContent = 'Uses your camera to read the barcode on the pack';
+      return;
+    }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { if (msg) msg.textContent = 'Camera not available here – type the barcode instead.'; return; }
     const token = {}; scan = token;
     try {
@@ -637,6 +647,7 @@
         ${[['kcal', 'Calories (kcal)'], ['p', 'Protein (g)'], ['c', 'Carbs (g)'], ['f', 'Fat (g)']].map(([k, l]) => `<label class="toggle"><span>${l}</span><input class="short" data-f="tgt" data-k="${k}" inputmode="numeric" value="${t ? t[k] : ''}"></label>`).join('')}
         <label class="toggle"><span>Water (L)</span><input class="short" data-f="waterT" inputmode="decimal" value="${(n.waterMl / 1000).toFixed(1)}"></label>
       </div>
+      <p class="muted small"><b>Not medical advice.</b> These are estimates for healthy adults; speak to a doctor or dietitian before big changes, or if you're pregnant, under 18 or have a medical condition.</p>
       <p class="muted small">Calculated with the Mifflin-St Jeor formula. After two to three weeks of logging food and weighing in, the Food tab shows a weekly check-in with your real maintenance calories.</p>`;
   };
   const calcCard = (calc) => `

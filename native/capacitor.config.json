@@ -1,0 +1,10 @@
+{
+  "appId": "com.connorgodwin.forge",
+  "appName": "Forge",
+  "webDir": "www",
+  "android": { "allowMixedContent": false },
+  "ios": { "contentInset": "never" },
+  "plugins": {
+    "LocalNotifications": { "smallIcon": "ic_stat_forge", "iconColor": "#a3e635" }
+  }
+}

@@ -2,6 +2,10 @@
 
 The version number matches `VERSION` in `sw.js` and Settings → App in the app.
 
+## v13
+- About, privacy & licences screen; privacy policy page; health disclaimers.
+- Groundwork for the Google Play and App Store apps (Capacitor project in `native/`).
+
 ## v12
 - Edit a saved workout (sets, exercises, date, time, duration), or log a past workout from scratch or from a plan day.
 - Automated tests (unit and browser) that run on GitHub for every push.

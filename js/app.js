@@ -161,7 +161,7 @@
     window.scrollTo(0, keepScroll ? y : 0);
     tick();
   }
-  const tabOf = (n) => ({ workout: 'train', settings: 'train', plan: 'plans', library: 'plans', exercise: 'plans', session: 'progress', history: 'progress', body: 'progress', records: 'progress',
+  const tabOf = (n) => ({ workout: 'train', settings: 'train', about: 'train', plan: 'plans', library: 'plans', exercise: 'plans', session: 'progress', history: 'progress', body: 'progress', records: 'progress',
     food: 'food', foodsearch: 'food', targets: 'food', mealplan: 'food', shopping: 'food', recipe: 'food', myfoods: 'food' }[n] || n);
 
   // ================= views =================
@@ -343,6 +343,7 @@
       </a>`).join('')}
     <h2>Templates</h2>
     <p class="muted small">${window.PLAN_TEMPLATES.length} plans for the gym, running, sports and health. Add one, then change anything: days, exercises, sets, reps, weights and rest times.</p>
+    <p class="muted small">Plans are general guidance, not medical advice. Start lighter than you think, and check with a professional if you have an injury or health condition.</p>
     <div class="chips">${['All', ...TPL_GROUPS].map((g) => `<button class="chip ${tplGroup === g ? 'on' : ''}" data-a="tplGroup" data-v="${esc(g)}">${esc(g)}</button>`).join('')}</div>
     ${TPL_GROUPS.filter((g) => tplGroup === 'All' || tplGroup === g).map((g) => `
       ${tplGroup === 'All' ? `<h3 class="tpl-group">${esc(g)}</h3>` : ''}
@@ -553,10 +554,35 @@
       <h2>App</h2>
       <div class="card">
         <div class="row between"><span>Version</span><span class="muted" id="appVersion">${esc(appVersion || '–')}</span></div>
-        <button class="btn block" data-a="checkUpdate">Check for updates</button>
+        ${isNative() ? '' : '<button class="btn block" data-a="checkUpdate">Check for updates</button>'}
       </div>
+      <a class="card list-item" href="#/about"><div><b>About, privacy & licences</b><div class="muted small">How your data is handled, disclaimers and credits</div></div><span class="chev">›</span></a>
       <p class="muted small center">${S.sessions.length} workouts · ${S.plans.length} plans · ${exAll().length} exercises</p>`;
   };
+
+  // ---------- About / privacy / licences ----------
+  const PRIVACY_URL = 'https://connorgodwin.github.io/Gym-app/privacy.html';
+  VIEWS.about = () => `
+    <header class="top"><a class="icon-btn" href="#/settings" aria-label="Back">${ICON.back}</a><h1 class="grow">About</h1></header>
+    <div class="card">
+      <h3>Forge ${esc(appVersion ? '· ' + appVersion : '')}</h3>
+      <p class="small">Training, nutrition and body tracking in one app. No accounts, no adverts, no analytics.</p>
+    </div>
+    <h2>Your privacy</h2>
+    <div class="card small">
+      <p>Everything you log stays on this device. Nothing is uploaded to us, and we never sell or share it.</p>
+      <p>Food searches and barcodes are sent to Open Food Facts to look up products. The camera is only used for barcodes and progress photos, and notifications only for timers.</p>
+      <a class="btn block" href="${PRIVACY_URL}" target="_blank" rel="noopener">Read the full privacy policy</a>
+    </div>
+    <h2>Not medical advice</h2>
+    <div class="card small"><p>Calorie targets, plans and suggestions are general fitness information, not medical advice. Check with a doctor or qualified professional before starting a new diet or exercise programme, especially if you are pregnant, injured or have a medical condition. Stop if something hurts.</p></div>
+    <h2>Credits & licences</h2>
+    <div class="card small licences">
+      <p><b>Exercise images, videos and instructions</b> are from <a href="https://wger.de" target="_blank" rel="noopener">wger</a> and its contributors, licensed <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a> / <a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC BY-SA 3.0</a> (a few CC0 / CC BY). Images were converted to WebP and videos re-encoded. Each exercise page credits its authors.</p>
+      <p><b>Food data</b>: contains information from <a href="https://openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a>, available under the <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener">Open Database License (ODbL)</a>.</p>
+      <p><b>Barcode scanning</b>: <a href="https://github.com/zxing-js/library" target="_blank" rel="noopener">ZXing</a> (Apache License 2.0)${window.Capacitor ? ', and Google ML Kit in the app versions' : ''}.</p>
+      ${window.Capacitor ? '<p><b>App shell</b>: <a href="https://capacitorjs.com" target="_blank" rel="noopener">Capacitor</a> and its plugins (MIT License).</p>' : ''}
+    </div>`;
 
   // ---------- Timer ----------
   const T = {
@@ -689,10 +715,17 @@
       o.connect(g).connect(actx.destination); o.start(t0); o.stop(t0 + dur + 0.02);
     }
   }
-  const buzz = (p) => { if (S.settings.vibrate && navigator.vibrate) try { navigator.vibrate(p); } catch (e) { /* ignore */ } };
+  const buzz = (p) => {
+    if (!S.settings.vibrate) return;
+    if (Forge.nativeBuzz) { Forge.nativeBuzz(p); return; }
+    if (navigator.vibrate) try { navigator.vibrate(p); } catch (e) { /* ignore */ }
+  };
+  // which timers are running, so the app (or the native shell) can keep the screen on
+  const wantAwake = () => !!(S.active && !S.active.mode) || T.sw.running || T.cd.running || T.iv.running || !!(S.race && S.race.start && !S.race.done);
   let wake = null;
   async function updateWakeLock() {
-    const want = !!(S.active && !S.active.mode) || T.sw.running || T.cd.running || T.iv.running || !!(S.race && S.race.start && !S.race.done);
+    const want = wantAwake();
+    if (Forge.nativeAwake) { Forge.nativeAwake(want); return; }
     try {
       if (want && !wake && 'wakeLock' in navigator && document.visibilityState === 'visible') {
         wake = await navigator.wakeLock.request('screen');
@@ -1075,6 +1108,7 @@
   A.setUnit = (el) => { S.settings[el.dataset.k] = el.dataset.v; save(); render(true); };
   A.unit = (el) => { S.settings.unit = el.dataset.u; save(); render(true); };
   A.export = () => {
+    if (Forge.nativeExport) { Forge.nativeExport(JSON.stringify(S, null, 2), `forge-backup-${new Date().toISOString().slice(0, 10)}.json`); return; }
     const blob = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -1312,8 +1346,10 @@
     ch.port1.onmessage = (e) => { appVersion = String(e.data || '').replace('forge-', ''); const el = $('#appVersion'); if (el) el.textContent = appVersion; };
     c.postMessage('GET_VERSION', [ch.port2]);
   }
+  const isNative = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
   function setupUpdates() {
-    if (!('serviceWorker' in navigator) || !location.protocol.startsWith('http')) return;
+    // store apps update through Google Play / the App Store, not the service worker
+    if (isNative() || !('serviceWorker' in navigator) || !location.protocol.startsWith('http')) return;
     navigator.serviceWorker.register('sw.js').then((reg) => {
       swReg = reg;
       watchWorker(reg.waiting);
@@ -1344,7 +1380,7 @@
   Object.assign(Forge, {
     get S() { return S; }, save, render, go, route, toast, esc, uid, num, unit, W, fmtDate, fmtDateLong,
     exById, exAll, historyFor, working, isWarm, volume, fmtSet, fmtSets, showModal, closeModal, startWorkout,
-    getPlan, getDay, defaultCfg, sheetHead, bwUnit, htUnit, lenUnit, fmtBW, fmtBWDelta, bwInputs, parseBW, fmtHeight, heightInputs, parseHeight, toLen, fromLen, fieldsIn, unitSeg, beep, buzz, updateWakeLock, ICON, VIEWS, A, HOOKS, C, T,
+    getPlan, getDay, defaultCfg, sheetHead, wantAwake, isNative, setAppVersion: (v) => { appVersion = v; }, bwUnit, htUnit, lenUnit, fmtBW, fmtBWDelta, bwInputs, parseBW, fmtHeight, heightInputs, parseHeight, toLen, fromLen, fieldsIn, unitSeg, beep, buzz, updateWakeLock, ICON, VIEWS, A, HOOKS, C, T,
   });
   Forge.boot = () => {
     applyTheme();
