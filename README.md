@@ -37,6 +37,13 @@ No build step. Serve the folder with any static server:
 python3 -m http.server 8000   # then open http://localhost:8000
 ```
 
+## Store apps (Android & iOS)
+`native/` holds a [Capacitor](https://capacitorjs.com) project that wraps this web app for Google Play and the App Store, adding rest-timer notifications, keep-awake, haptics, native barcode scanning (Android), share-sheet backups and file-backed storage (`js/native.js`).
+- Every push that touches the app builds an installable **Android test APK** and compiles the **iOS** app (Actions → *Native apps* → Artifacts).
+- Local: `cd native && npm ci && npm run android` (or `npm run ios` on a Mac) opens the project in Android Studio / Xcode.
+- Icons and splash screens: `python3 native/scripts/make-icons.py`.
+- Store listing text, privacy-form answers, screenshots and release steps: [`store/README.md`](store/README.md).
+
 ## Tests
 Automated tests run on GitHub for every push (see the Actions tab). To run them locally:
 ```
